@@ -31,6 +31,7 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Program.cs" />
     <Compile Include="AdaptiveSamplerTests.cs" />
     <Compile Include="PolyToolsTests.cs" />
     <Compile Include="..\OffsetGen2\PolyTools.cs"><Link>PolyTools.cs</Link></Compile>
