@@ -119,19 +119,29 @@ namespace OffsetGenPlugin
         public double UnitsWidth() { double s = 0; foreach (double w in ColUnits()) s += w; return s; }
         public double UnitsHeight() { double s = HeaderUnits(); foreach (var r in Rows) s += RowUnits(r); return s; }
 
-        // 좌상단 (ox, oy), 아래로 그림. th = 글자 높이
-        public void Draw(DxfBuilder b, double ox, double oy, double th, string layerGrid, string layerText)
+        // 좌상단 (ox, oy), 아래로 그림. th = 글자 높이.
+        // targetW / targetH > 0 이고 자연 크기보다 크면 열 폭 / 행 높이를 비율로 늘려 그 크기에 맞춤 (글자 크기는 그대로)
+        public void Draw(DxfBuilder b, double ox, double oy, double th, string layerGrid, string layerText,
+                         double targetW = 0.0, double targetH = 0.0)
         {
             double[] cu = ColUnits();
             int nc = cu.Length;
-            double totalW = 0; foreach (double w in cu) totalW += w * th;
+            double natW = 0; foreach (double w in cu) natW += w * th;
+            double fw = (targetW > natW) ? targetW / natW : 1.0;
+            var cw = new double[nc];
+            for (int c = 0; c < nc; c++) cw[c] = cu[c] * th * fw;
+            double totalW = natW * fw;
+
+            double hh = HeaderUnits() * th;
+            double rowsNat = 0; foreach (var r in Rows) rowsNat += RowUnits(r) * th;
+            double fr = (targetH > hh + rowsNat) ? (targetH - hh) / rowsNat : 1.0;
 
             // 행 위치
             var ys = new List<double>();
             double y = oy;
             ys.Add(y);
-            y -= HeaderUnits() * th; ys.Add(y);
-            foreach (var r in Rows) { y -= RowUnits(r) * th; ys.Add(y); }
+            y -= hh; ys.Add(y);
+            foreach (var r in Rows) { y -= RowUnits(r) * th * fr; ys.Add(y); }
             double totalH = oy - y;
 
             // 제목 / 단위
@@ -144,22 +154,20 @@ namespace OffsetGenPlugin
             for (int c = 0; c <= nc; c++)
             {
                 b.Line(layerGrid, x, oy, x, oy - totalH);
-                if (c < nc) x += cu[c] * th;
+                if (c < nc) x += cw[c];
             }
 
             // 머리글
             x = ox;
             for (int c = 0; c < nc; c++)
             {
-                double cw = cu[c] * th;
-                double hh = HeaderUnits() * th;
                 var lines = Headers[c];
                 for (int i = 0; i < lines.Length; i++)
                 {
                     double ty = oy - hh / 2.0 + (lines.Length - 1) * 0.5 * HeadLine * th - i * HeadLine * th;
-                    b.Text(layerText, x + cw / 2.0, ty, th, lines[i], 1);
+                    b.Text(layerText, x + cw[c] / 2.0, ty, th, lines[i], 1);
                 }
-                x += cw;
+                x += cw[c];
             }
 
             // 칸
@@ -170,14 +178,13 @@ namespace OffsetGenPlugin
                 x = ox;
                 for (int c = 0; c < nc; c++)
                 {
-                    double cw = cu[c] * th;
                     var lines = Rows[r][c];
                     for (int i = 0; i < lines.Length; i++)
                     {
                         double ty = mid + (lines.Length - 1) * 0.5 * RowLine * th - i * RowLine * th;
-                        b.Text(layerText, x + cw / 2.0, ty, th, lines[i], 1);
+                        b.Text(layerText, x + cw[c] / 2.0, ty, th, lines[i], 1);
                     }
-                    x += cw;
+                    x += cw[c];
                 }
             }
         }
