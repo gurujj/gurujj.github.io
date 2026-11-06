@@ -1,9 +1,9 @@
 
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.0.31903.59
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OffsetGen", "OffsetGen\OffsetGen.csproj", "{8A4B7C21-3D5E-4F60-9B12-6E7D0A1C3F84}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OffsetGen", "OffsetGen\OffsetGen.csproj", "{8A4B7C21-3D5E-4F60-9B12-6E7D0A1C3F84}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
