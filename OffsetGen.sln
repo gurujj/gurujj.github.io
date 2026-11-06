@@ -5,6 +5,8 @@ VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OffsetGen", "OffsetGen\OffsetGen.csproj", "{8A4B7C21-3D5E-4F60-9B12-6E7D0A1C3F84}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OffsetGen.Tests", "Tests\OffsetGen.Tests.csproj", "{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{8A4B7C21-3D5E-4F60-9B12-6E7D0A1C3F84}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8A4B7C21-3D5E-4F60-9B12-6E7D0A1C3F84}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8A4B7C21-3D5E-4F60-9B12-6E7D0A1C3F84}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

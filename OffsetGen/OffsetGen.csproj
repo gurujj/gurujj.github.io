@@ -42,8 +42,22 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="OffsetGen.cs" />
+    <Compile Include="Core\AdaptiveSampler.cs" />
+    <Compile Include="Core\CsvWriter.cs" />
+    <Compile Include="Core\DxfBuilder.cs" />
+    <Compile Include="Core\ListBuilder.cs" />
+    <Compile Include="Core\PolyTools.cs" />
+    <Compile Include="Core\Pt.cs" />
+    <Compile Include="Core\StationNumbering.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Rhino\ButtockTracer.cs" />
+    <Compile Include="Rhino\CurveUtil.cs" />
+    <Compile Include="Rhino\Data.cs" />
+    <Compile Include="Rhino\DxfWriter.cs" />
+    <Compile Include="Rhino\HintTextBox.cs" />
+    <Compile Include="Rhino\OffsetGenCommand.cs" />
+    <Compile Include="Rhino\OffsetGenDialog.cs" />
+    <Compile Include="Rhino\OffsetGenPlugIn.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- 빌드 후 OffsetGen.dll 을 OffsetGen.rhp 로 복사 (라이노에서 .rhp 를 끌어다 놓거나 PlugInManager 로 설치) -->
