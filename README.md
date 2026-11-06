@@ -1,5 +1,7 @@
 # OffsetGen - 선형 오프셋 테이블 / 선도 (Rhino 플러그인)
 
+Made by Jejun Park, Ph. D.
+
 | 폴더 | 내용 |
 |---|---|
 | `OffsetGen2.sln`, `OffsetGen2/`, `Tests/` | **새 버전 1.1.0-alpha.1** (벌브 선수 버톡 정밀 추적). 명령어 `OffsetGen2` |
