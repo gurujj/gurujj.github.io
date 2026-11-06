@@ -1,53 +1,35 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{8A4B7C21-3D5E-4F60-9B12-6E7D0A1C3F84}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>OffsetGenPlugin</RootNamespace>
+    <!-- VS 2022 + .NET 9 SDK 로 빌드. 라이노 8은 .NET 7/8 런타임이므로 타깃은 net7.0-windows (+ net48) -->
+    <TargetFrameworks>net7.0-windows;net48</TargetFrameworks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
     <AssemblyName>OffsetGen</AssemblyName>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <LangVersion>6</LangVersion>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- Rhino 8 설치 폴더가 다르면 빌드 시 /p:RhinoDir="..." 로 지정 (오프라인, NuGet 불필요) -->
+    <RootNamespace>OffsetGenPlugin</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <TargetExt>.rhp</TargetExt>
+    <!-- Rhino 8 설치 폴더가 다르면 /p:RhinoDir="..." 로 지정 (NuGet 불필요, 오프라인 가능) -->
     <RhinoDir Condition=" '$(RhinoDir)' == '' ">C:\Program Files\Rhino 8\System</RhinoDir>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-  </PropertyGroup>
-  <ItemGroup>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Drawing" />
+
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net48' ">
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
     <Reference Include="RhinoCommon">
       <HintPath>$(RhinoDir)\RhinoCommon.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
-  <ItemGroup>
-    <Compile Include="OffsetGen.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
+
+  <ItemGroup Condition=" '$(TargetFramework)' != 'net48' ">
+    <Reference Include="RhinoCommon">
+      <HintPath>$(RhinoDir)\netcore\RhinoCommon.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- 빌드 후 OffsetGen.dll 을 OffsetGen.rhp 로 복사 (라이노에서 .rhp 를 끌어다 놓거나 PlugInManager 로 설치) -->
-  <Target Name="AfterBuild">
-    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(TargetDir)$(TargetName).rhp" />
-  </Target>
+
 </Project>
