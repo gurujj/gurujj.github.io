@@ -5,10 +5,10 @@
 // 환경: Visual Studio 2015 / .NET Framework 4.8 / C# 6 이하 문법만 사용
 // 참조: RhinoCommon.dll, System.Windows.Forms, System.Drawing (RhinoCommon은 Copy Local = False)
 //
-// 입력(탭 1): 스테이션 = AP x, FP x, 간격(스테이션 1개의 x 길이), 시작/끝 스테이션 번호 (AP = 0)
+// 입력(탭 1): 스테이션 = AP x, FP x, 분할 수(AP~FP를 나눌 구간 수, 간격 = (FP-AP)/분할 수), 시작/끝 스테이션 번호 (AP = 0)
 //             + 직접 입력 스테이션 번호(쉼표 구분)를 합쳐 작은 번호 -> 큰 번호로 정렬, 중복 제거
 //             워터라인(z) / 버톡(y)은 "시작 / 끝 / 간격" + 추가 값을 합쳐 오름차순 정렬, 중복 제거
-//             기본값: AP 0, FP 200, 간격 10, 추가 St. -0.5 0.5 1.5 18.5 19.5, WL 0~23 간격 1 (+0.4), BT 0~16 간격 1
+//             기본값: AP 0, FP 200, 분할 수 20, 추가 St. -0.5 0.5 1.5 18.5 19.5, WL 0~23 간격 1 (+0.4), BT 0~16 간격 1
 //             현재 단위(입력값/모델 좌표가 뜻하는 단위)와 쓰기 단위(m / cm / mm)를 골라 CSV/DXF 값만 환산
 //             배율 = 현재 단위 / 쓰기 단위 (m -> mm 이면 x1000). DXF 글자 높이는 쓰기 단위
 // 입력(탭 2): 라이노 표시, CSV/DXF 출력, 현재/쓰기 단위, 선도 옵션(갑판선, 버톡 스무딩, 선명, 척도)
@@ -165,7 +165,9 @@ namespace OffsetGenPlugin
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-        TextBox txtAp, txtFp, txtStaSpacing, txtStaStartNo, txtStaEndNo;
+        TextBox txtAp, txtFp, txtStaDiv, txtStaStartNo, txtStaEndNo;
+        Label lblSpacing;
+        string lastDivText = "20";
         HintTextBox txtStaCustom;
         TextBox txtWlStart, txtWlEnd, txtWlStep;
         HintTextBox txtWlExtra;
@@ -229,13 +231,24 @@ namespace OffsetGenPlugin
             txtAp = AddText("0", 44, 21, 70, gbSta);
             AddLabel("FP x", 124, 24, gbSta);
             txtFp = AddText("200", 156, 21, 70, gbSta);
-            AddLabel("간격", 236, 24, gbSta);
-            txtStaSpacing = AddText("10", 268, 21, 70, gbSta);
+            AddLabel("분할 수", 236, 24, gbSta);
+            txtStaDiv = AddText("20", 284, 21, 54, gbSta);
             AddLabel("시작 St.", 12, 54, gbSta);
             txtStaStartNo = AddText("0", 62, 51, 60, gbSta);
             AddLabel("끝 St.", 140, 54, gbSta);
             txtStaEndNo = AddText("20", 180, 51, 60, gbSta);
-            AddLabel("간격 = 스테이션 1개의 x 길이", 12, 82, gbSta);
+            lblSpacing = new Label { Left = 12, Top = 82, AutoSize = true };
+            gbSta.Controls.Add(lblSpacing);
+            txtAp.TextChanged += delegate { UpdateSpacingLabel(); };
+            txtFp.TextChanged += delegate { UpdateSpacingLabel(); };
+            txtStaDiv.TextChanged += delegate
+            {
+                // 끝 St.가 직전 분할 수와 같았다면(=FP 스테이션) 새 분할 수를 따라감
+                if (txtStaEndNo != null && txtStaEndNo.Text.Trim() == lastDivText) txtStaEndNo.Text = txtStaDiv.Text.Trim();
+                lastDivText = txtStaDiv.Text.Trim();
+                UpdateSpacingLabel();
+            };
+            UpdateSpacingLabel();
             AddLabel("추가 스테이션 번호 (쉼표 구분, 위 스테이션에 추가)", 12, 100, gbSta);
             txtStaCustom = new HintTextBox { Hint = "예: -0.5, 0.5, 19.5, 20.5", Text = "-0.5, 0.5, 1.5, 18.5, 19.5", Left = 12, Top = 120, Width = 366 };
             gbSta.Controls.Add(txtStaCustom);
@@ -385,6 +398,18 @@ namespace OffsetGenPlugin
             }
         }
 
+        // AP, FP, 분할 수로 계산되는 스테이션 간격을 보여줌
+        void UpdateSpacingLabel()
+        {
+            double ap, fp, div;
+            if (double.TryParse(txtAp.Text, NumberStyles.Float, Inv, out ap) &&
+                double.TryParse(txtFp.Text, NumberStyles.Float, Inv, out fp) &&
+                double.TryParse(txtStaDiv.Text, NumberStyles.Float, Inv, out div) && fp > ap && div > 0)
+                lblSpacing.Text = "스테이션 간격 = (FP - AP) / 분할 수 = " + N((fp - ap) / div) + "   (Lpp = " + N(fp - ap) + ")";
+            else
+                lblSpacing.Text = "스테이션 간격 = (FP - AP) / 분할 수";
+        }
+
         void OnOk(object sender, EventArgs e)
         {
             double ap, fp, spacing, stStart, stEnd;
@@ -394,11 +419,13 @@ namespace OffsetGenPlugin
                 MessageBox.Show("AP, FP 값을 확인하세요. (FP > AP)");
                 return;
             }
-            if (!double.TryParse(txtStaSpacing.Text, NumberStyles.Float, Inv, out spacing) || spacing <= 0)
+            double div;
+            if (!double.TryParse(txtStaDiv.Text, NumberStyles.Float, Inv, out div) || div <= 0)
             {
-                MessageBox.Show("스테이션 간격을 확인하세요. (> 0)");
+                MessageBox.Show("분할 수를 확인하세요. (> 0, AP~FP를 나누는 구간 수)");
                 return;
             }
+            spacing = (fp - ap) / div;   // 스테이션 1개의 x 길이 = (FP - AP) / 분할 수
             if (!double.TryParse(txtStaStartNo.Text, NumberStyles.Float, Inv, out stStart) ||
                 !double.TryParse(txtStaEndNo.Text, NumberStyles.Float, Inv, out stEnd) || stEnd < stStart)
             {
