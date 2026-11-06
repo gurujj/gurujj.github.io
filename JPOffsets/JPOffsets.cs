@@ -1,5 +1,5 @@
 // Made by Jejun Park, Ph. D.
-// OffsetGen2 - 선형 오프셋 테이블 + 선도(Lines plan) 생성 명령 (Rhino .rhp 플러그인), 명령어: OffsetGen2
+// JPOffsets - 선형 오프셋 테이블 + 선도(Lines plan) 생성 명령 (Rhino .rhp 플러그인), 명령어: JPOffsets
 // [1.1.0-alpha.1] 벌브 선수 대응: 버톡 라인을 "x마다 최저 z"가 아니라 버톡 평면(y=b)과 선체의 정확한 교차 곡선으로 추적
 //   (이전 버전 OffsetGen 1.0.0-alpha.5 는 Archive/ 에 보관)
 // 환경: Visual Studio 2015 / .NET Framework 4.8 / C# 6 이하 문법만 사용
@@ -47,17 +47,17 @@ namespace OffsetGenPlugin
     // ---------------------------------------------------------------
     // 플러그인 본체
     // ---------------------------------------------------------------
-    public class OffsetGen2PlugIn : Rhino.PlugIns.PlugIn
+    public class JPOffsetsPlugIn : Rhino.PlugIns.PlugIn
     {
-        public static OffsetGen2PlugIn Instance { get; private set; }
-        public OffsetGen2PlugIn() { Instance = this; }
+        public static JPOffsetsPlugIn Instance { get; private set; }
+        public JPOffsetsPlugIn() { Instance = this; }
     }
 
     public static class PlugInInfo
     {
         public const string Author = "Jejun Park, Ph. D.";
         public const string Credit = "made by Jejun Park, Ph. D.";
-        public const string Version = "1.1.0-alpha.4";
+        public const string Version = "1.2.0-alpha.1";
     }
 
     // ---------------------------------------------------------------
@@ -101,43 +101,6 @@ namespace OffsetGenPlugin
         public double ZBot;   // 단면의 최저 높이
     }
 
-    public class StationNumbering
-    {
-        public bool Valid;
-        public double ApX;
-        public double FpX;
-        public double Spacing = 1.0;   // 스테이션 1개의 간격 (x 길이 단위)
-        public bool FpOrigin = true;   // true: FP = 0, 번호가 선미(AP) 쪽으로 증가 (도면 방식) / false: AP = 0, 선수 쪽으로 증가
-
-        // 스테이션 번호 (소수 4자리 반올림). x 위치 -> 번호
-        public double Number(double x)
-        {
-            double n = FpOrigin ? (FpX - x) / Spacing : (x - ApX) / Spacing;
-            n = Math.Round(n, 4);
-            if (Math.Abs(n) < 1e-9) n = 0.0;
-            return n;
-        }
-
-        // 번호 -> x 위치
-        public double PositionOf(double no)
-        {
-            return FpOrigin ? FpX - no * Spacing : ApX + no * Spacing;
-        }
-
-        // 표시 문자열: AP, FP 위치는 "A.P." / "F.P.", 나머지는 번호
-        public string Label(double x)
-        {
-            if (!Valid || Spacing <= 0) return "";
-            double n = Number(x);
-            double div = (FpX - ApX) / Spacing;
-            bool atZero = Math.Abs(n) < 1e-9;
-            bool atEnd = Math.Abs(n - div) < 1e-6;
-            if (atZero) return FpOrigin ? "F.P." : "A.P.";
-            if (atEnd) return FpOrigin ? "A.P." : "F.P.";
-            return n.ToString("0.##", CultureInfo.InvariantCulture);
-        }
-    }
-
     public class LinesData
     {
         public BoundingBox Bbox;
@@ -151,7 +114,8 @@ namespace OffsetGenPlugin
         public string ShipName;
         public string ScaleText;
         public string UnitName;   // 출력 단위 ("m" 또는 "mm")
-        public double? DepthM;    // 주요 치수용 (미터), 비어 있으면 도면에 쓰지 않음
+        public double? DepthM;    // 주요 치수용 (미터): DEPTH TO MAIN DK, 비어 있으면 도면에 쓰지 않음
+        public double? UpperDepthM;   // DEPTH TO UPPER DK
         public double? DraftM;
     }
 
@@ -199,49 +163,54 @@ namespace OffsetGenPlugin
         NumericUpDown numDecimals;
         ComboBox cmbFrom, cmbTo;
         Label lblFactor;
-        string lastDefaultTextH = "2500";
+        string lastDefaultTextH = "0";
         string modelUnitLabel = "";
         CheckBox chkCsv, chkDxf, chkLines, chkDeck, chkButtock;
-        CheckBox chkShowSta, chkShowWl, chkShowBt, chkSmooth, chkExact, chkFpOrigin;
-        TextBox txtDepth, txtDraft;
+        CheckBox chkShowSta, chkShowWl, chkShowBt, chkSmooth, chkExact;
+        RadioButton rbFpOrigin, rbApOrigin;
+        TextBox txtDepth, txtUpperDepth, txtDraft;
 
         public List<double> Stations = new List<double>();
         public List<double> Waterlines = new List<double>();
         public List<double> Buttocks = new List<double>();
         public bool UseButtocks = true;
-        public int Decimals = 3;
+        public int Decimals = 0;
         public bool WriteCsv = true;
         public bool WriteDxf = true;
         public bool IncludeLines = true;
         public bool DeckLine = true;
         public bool SmoothButtocks = true;
         public bool ExactButtocks = true;
-        public bool FpOrigin = true;           // 스테이션 번호: FP = 0, 선미 쪽으로 증가
-        public double? DepthM;                 // 주요 치수 (미터)
+        public bool FpOrigin = true;           // 스테이션 번호: FP 원점(FP = 0, 선미 쪽으로 증가) / AP 원점(AP = 0, 선수 쪽으로 증가)
+        public double? DepthM;                 // 제원 (미터)
+        public double? UpperDepthM;
         public double? DraftM;
         public bool ShowStationCurves = true;
         public bool ShowWaterlineCurves = true;
         public bool ShowButtockCurves = true;
         public string FromUnit = "m";          // 현재 단위 (입력값/모델 좌표가 뜻하는 단위): m, cm, mm
         public string ToUnit = "mm";           // 쓰기 단위 (CSV/DXF 출력 단위)
-        public double TextHeight = 2.5;        // DXF 글자 높이 (출력 단위)
+        public double TextHeight = 0.0;        // 글자 높이 (출력 단위), 0 = 자동
         public double ApX = 0.0;               // 입력값은 모델 단위
         public double FpX = 200.0;
         public double StationSpacing = 10.0;   // 스테이션 1개의 x 길이
         public string ShipName = "";
         public string ScaleText = "1:100";
 
-        public OffsetGenDialog(string modelUnitName)
+        // bbox: 선택한 선체의 바운딩 박스. 유효하면 입력 창 초기값을 선체 치수로 채움
+        public OffsetGenDialog(string modelUnitName, BoundingBox bbox)
         {
-            Text = "OffsetGen2 - 오프셋 테이블 / 선도 생성";
+            Text = "JPOffsets - 오프셋 테이블 / 선도 생성";
+            AutoScaleMode = AutoScaleMode.Dpi;
+            Font = new Font("Malgun Gothic", 9F);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(430, 520);
+            ClientSize = new Size(600, 780);
             modelUnitLabel = modelUnitName;
 
-            var tabs = new TabControl { Left = 8, Top = 8, Width = 414, Height = 460 };
+            var tabs = new TabControl { Left = 8, Top = 8, Width = 584, Height = 716 };
             var tabA = new TabPage("단면 정의");
             var tabB = new TabPage("출력 / 선도");
             tabs.TabPages.Add(tabA);
@@ -249,97 +218,105 @@ namespace OffsetGenPlugin
             Controls.Add(tabs);
 
             // ===== 탭 1: 단면 정의 (입력값은 모두 모델 단위) =====
-            int y = 6;
+            int y = 8;
+            const int GW = 560;   // 그룹 상자 폭
 
-            var gbSta = new GroupBox { Text = "스테이션 (AP~FP를 분할 수로 등분)", Left = 6, Top = y, Width = 392, Height = 172 };
+            var gbSta = new GroupBox { Text = "스테이션 (A.P.~F.P. 를 분할 수로 등분)", Left = 6, Top = y, Width = GW, Height = 258 };
             tabA.Controls.Add(gbSta);
-            AddLabel("AP x", 12, 24, gbSta);
-            txtAp = AddText("0", 44, 21, 70, gbSta);
-            AddLabel("FP x", 124, 24, gbSta);
-            txtFp = AddText("200", 156, 21, 70, gbSta);
-            AddLabel("분할 수", 236, 24, gbSta);
-            txtStaDiv = AddText("20", 284, 21, 54, gbSta);
-            AddLabel("시작 St.", 12, 54, gbSta);
-            txtStaStartNo = AddText("0", 62, 51, 60, gbSta);
-            AddLabel("끝 St.", 140, 54, gbSta);
-            txtStaEndNo = AddText("20", 180, 51, 60, gbSta);
-            lblSpacing = new Label { Left = 12, Top = 78, AutoSize = true };
+            AddLabel("A.P. 위치", 14, 30, gbSta);
+            txtAp = AddText("0", 92, 27, 90, gbSta);
+            AddLabel("F.P. 위치", 200, 30, gbSta);
+            txtFp = AddText("200", 278, 27, 90, gbSta);
+            AddLabel("분할 수", 390, 30, gbSta);
+            txtStaDiv = AddText("20", 450, 27, 80, gbSta);
+            var lblHint = new Label { Text = "A.P., F.P. 위치 = 길이 방향(x) 좌표 (모델 단위)", Left = 14, Top = 58, AutoSize = true, ForeColor = Color.Gray };
+            gbSta.Controls.Add(lblHint);
+            lblSpacing = new Label { Left = 14, Top = 82, AutoSize = true };
             gbSta.Controls.Add(lblSpacing);
-            chkFpOrigin = new CheckBox { Text = "번호: FP = 0 → AP = 분할 수 (도면 방식). 해제하면 AP = 0 → FP", Left = 12, Top = 96, Width = 372, Checked = true };
-            gbSta.Controls.Add(chkFpOrigin);
+
+            AddLabel("스테이션 번호 원점", 14, 112, gbSta);
+            rbFpOrigin = new RadioButton { Text = "FP 원점  (FP = 0, FP → AP 로 번호 증가)", Left = 30, Top = 134, Width = 500, Checked = true };
+            rbApOrigin = new RadioButton { Text = "AP 원점  (AP = 0, AP → FP 로 번호 증가)", Left = 30, Top = 158, Width = 500 };
+            gbSta.Controls.Add(rbFpOrigin);
+            gbSta.Controls.Add(rbApOrigin);
+
+            AddLabel("시작 St.", 14, 192, gbSta);
+            txtStaStartNo = AddText("0", 80, 189, 70, gbSta);
+            AddLabel("끝 St.", 170, 192, gbSta);
+            txtStaEndNo = AddText("20", 218, 189, 70, gbSta);
+            AddLabel("추가 스테이션 번호 (쉼표 구분)", 14, 220, gbSta);
+            txtStaCustom = new HintTextBox { Hint = "예: -0.5, 0.5, 19.5, 20.5", Text = "-0.5, 0.5, 1.5, 18.5, 19.5", Left = 250, Top = 217, Width = 290 };
+            gbSta.Controls.Add(txtStaCustom);
             txtAp.TextChanged += delegate { UpdateSpacingLabel(); };
             txtFp.TextChanged += delegate { UpdateSpacingLabel(); };
             txtStaDiv.TextChanged += delegate
             {
-                // 끝 St.가 직전 분할 수와 같았다면(=FP 스테이션) 새 분할 수를 따라감
+                // 끝 St.가 직전 분할 수와 같았다면(=끝 스테이션) 새 분할 수를 따라감
                 if (txtStaEndNo != null && txtStaEndNo.Text.Trim() == lastDivText) txtStaEndNo.Text = txtStaDiv.Text.Trim();
                 lastDivText = txtStaDiv.Text.Trim();
                 UpdateSpacingLabel();
             };
             UpdateSpacingLabel();
-            AddLabel("추가 스테이션 번호 (쉼표 구분, 위 스테이션에 추가)", 12, 124, gbSta);
-            txtStaCustom = new HintTextBox { Hint = "예: -0.5, 0.5, 19.5, 20.5", Text = "-0.5, 0.5, 1.5, 18.5, 19.5", Left = 12, Top = 144, Width = 366 };
-            gbSta.Controls.Add(txtStaCustom);
-            y += 178;
+            y += 266;
 
-            var gbWl = new GroupBox { Text = "워터라인 (z, 높이 방향)", Left = 6, Top = y, Width = 392, Height = 110 };
+            var gbWl = new GroupBox { Text = "워터라인 W.L. (z, 높이 방향)", Left = 6, Top = y, Width = GW, Height = 124 };
             tabA.Controls.Add(gbWl);
-            AddLabel("시작", 12, 24, gbWl);
-            txtWlStart = AddText("1", 44, 21, 70, gbWl);
-            AddLabel("끝", 124, 24, gbWl);
-            txtWlEnd = AddText("23", 144, 21, 70, gbWl);
-            AddLabel("간격", 226, 24, gbWl);
-            txtWlStep = AddText("1", 260, 21, 70, gbWl);
-            AddLabel("추가 값 (쉼표 구분, 위 범위에 추가)", 12, 54, gbWl);
-            txtWlExtra = new HintTextBox { Hint = "예: 0.5, 2.5", Text = "0.5", Left = 12, Top = 74, Width = 366 };
+            AddLabel("시작", 14, 30, gbWl);
+            txtWlStart = AddText("1", 54, 27, 90, gbWl);
+            AddLabel("끝", 168, 30, gbWl);
+            txtWlEnd = AddText("23", 194, 27, 90, gbWl);
+            AddLabel("간격", 308, 30, gbWl);
+            txtWlStep = AddText("1", 348, 27, 90, gbWl);
+            AddLabel("추가 값 (쉼표 구분, 위 범위에 추가)", 14, 64, gbWl);
+            txtWlExtra = new HintTextBox { Hint = "예: 0.5, 2.5", Text = "0.5", Left = 14, Top = 86, Width = 530 };
             gbWl.Controls.Add(txtWlExtra);
-            y += 116;
+            y += 132;
 
-            var gbBt = new GroupBox { Text = "버톡 (y, 폭 방향, 중심선에서의 거리)", Left = 6, Top = y, Width = 392, Height = 110 };
+            var gbBt = new GroupBox { Text = "버톡 B.T. (y, 폭 방향, 중심선에서의 거리)", Left = 6, Top = y, Width = GW, Height = 124 };
             tabA.Controls.Add(gbBt);
-            AddLabel("시작", 12, 24, gbBt);
-            txtBtStart = AddText("2", 44, 21, 70, gbBt);
-            AddLabel("끝", 124, 24, gbBt);
-            txtBtEnd = AddText("16", 144, 21, 70, gbBt);
-            AddLabel("간격", 226, 24, gbBt);
-            txtBtStep = AddText("1", 260, 21, 60, gbBt);
-            chkButtock = new CheckBox { Text = "사용", Left = 330, Top = 21, Width = 56, Checked = true };
+            AddLabel("시작", 14, 30, gbBt);
+            txtBtStart = AddText("2", 54, 27, 90, gbBt);
+            AddLabel("끝", 168, 30, gbBt);
+            txtBtEnd = AddText("16", 194, 27, 90, gbBt);
+            AddLabel("간격", 308, 30, gbBt);
+            txtBtStep = AddText("1", 348, 27, 90, gbBt);
+            chkButtock = new CheckBox { Text = "사용", Left = 462, Top = 27, Width = 80, Checked = true };
             gbBt.Controls.Add(chkButtock);
-            AddLabel("추가 값 (쉼표 구분, 위 범위에 추가)", 12, 54, gbBt);
-            txtBtExtra = new HintTextBox { Hint = "예: 0.5, 1, 1.5", Text = "0.5, 1, 1.5", Left = 12, Top = 74, Width = 366 };
+            AddLabel("추가 값 (쉼표 구분, 위 범위에 추가)", 14, 64, gbBt);
+            txtBtExtra = new HintTextBox { Hint = "예: 0.5, 1, 1.5", Text = "0.5, 1, 1.5", Left = 14, Top = 86, Width = 530 };
             gbBt.Controls.Add(txtBtExtra);
-            y += 116;
+            y += 132;
 
-            AddLabel("소수점 자리수", 12, y + 3, tabA);
-            numDecimals = AddNum(0, 0, 8, 110, y, 60, tabA);   // 쓰기 단위 mm 기본이므로 정수 (m로 바꾸면 3으로 자동 변경)
-            AddLabel("입력값 단위 = 현재 단위 (탭 2에서 선택)", 190, y + 3, tabA);
+            AddLabel("소수점 자리수", 14, y + 4, tabA);
+            numDecimals = AddNum(0, 0, 8, 118, y, 70, tabA);   // 쓰기 단위 mm 기본이므로 정수 (m로 바꾸면 3으로 자동 변경)
+            AddLabel("입력값 단위 = 현재 단위 (탭 2에서 선택)", 210, y + 4, tabA);
 
             // ===== 탭 2: 출력 / 선도 =====
-            y = 6;
+            y = 8;
 
-            chkShowSta = new CheckBox { Text = "스테이션 커브", Left = 6, Top = y, Width = 125, Checked = true };
-            chkShowWl = new CheckBox { Text = "워터라인 커브", Left = 136, Top = y, Width = 125, Checked = true };
-            chkShowBt = new CheckBox { Text = "버톡 커브", Left = 266, Top = y, Width = 125, Checked = true };
+            chkShowSta = new CheckBox { Text = "스테이션 커브", Left = 8, Top = y, Width = 170, Checked = true };
+            chkShowWl = new CheckBox { Text = "워터라인 커브", Left = 190, Top = y, Width = 170, Checked = true };
+            chkShowBt = new CheckBox { Text = "버톡 커브", Left = 372, Top = y, Width = 170, Checked = true };
             tabB.Controls.Add(chkShowSta);
             tabB.Controls.Add(chkShowWl);
             tabB.Controls.Add(chkShowBt);
-            AddLabel("위 항목: 라이노에 단면 커브를 레이어로 추가", 6, y + 26, tabB);
-            y += 52;
+            AddLabel("위 항목: 라이노에 단면 커브를 레이어로 추가", 8, y + 30, tabB);
+            y += 62;
 
-            var gbOut = new GroupBox { Text = "파일 출력", Left = 6, Top = y, Width = 392, Height = 136 };
+            var gbOut = new GroupBox { Text = "파일 출력", Left = 6, Top = y, Width = GW, Height = 170 };
             tabB.Controls.Add(gbOut);
-            chkCsv = new CheckBox { Text = "CSV", Left = 12, Top = 22, Width = 60, Checked = true };
-            chkDxf = new CheckBox { Text = "DXF", Left = 80, Top = 22, Width = 60, Checked = true };
+            chkCsv = new CheckBox { Text = "CSV", Left = 14, Top = 28, Width = 70, Checked = true };
+            chkDxf = new CheckBox { Text = "DXF", Left = 92, Top = 28, Width = 70, Checked = true };
             gbOut.Controls.Add(chkCsv);
             gbOut.Controls.Add(chkDxf);
-            AddLabel("글자 높이 (0=자동)", 168, 24, gbOut);
-            txtTextH = AddText("0", 290, 21, 60, gbOut);
-            chkLines = new CheckBox { Text = "DXF에 선도 포함 (Body / Half-breadth / Sheer plan)", Left = 12, Top = 50, Width = 370, Checked = true };
+            AddLabel("글자 높이 (0 = 자동)", 250, 31, gbOut);
+            txtTextH = AddText("0", 400, 27, 80, gbOut);
+            chkLines = new CheckBox { Text = "DXF에 선도 포함 (Body / Half-breadth / Sheer plan)", Left = 14, Top = 60, Width = 520, Checked = true };
             gbOut.Controls.Add(chkLines);
-            AddLabel("현재 단위", 12, 84, gbOut);
-            cmbFrom = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 74, Top = 80, Width = 56 };
-            AddLabel("→ 쓰기 단위", 140, 84, gbOut);
-            cmbTo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 226, Top = 80, Width = 56 };
+            AddLabel("현재 단위", 14, 100, gbOut);
+            cmbFrom = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 90, Top = 96, Width = 70 };
+            AddLabel("→ 쓰기 단위", 180, 100, gbOut);
+            cmbTo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Left = 270, Top = 96, Width = 70 };
             foreach (string u in new[] { "m", "cm", "mm" })
             {
                 cmbFrom.Items.Add(u);
@@ -348,44 +325,83 @@ namespace OffsetGenPlugin
             string detected = UnitFromRhino(modelUnitName);
             cmbFrom.SelectedIndex = detected == "cm" ? 1 : (detected == "mm" ? 2 : 0);   // 라이노 모델 단위로 초기화
             cmbTo.SelectedIndex = 2;                                                       // mm
-            lastDefaultTextH = "0";   // 0 = 선체 길이에 맞춰 자동
             txtTextH.Text = lastDefaultTextH;
             cmbFrom.SelectedIndexChanged += OnUnitChanged;
             cmbTo.SelectedIndexChanged += OnUnitChanged;
             gbOut.Controls.Add(cmbFrom);
             gbOut.Controls.Add(cmbTo);
-            lblFactor = new Label { Left = 12, Top = 110, AutoSize = true };
+            lblFactor = new Label { Left = 14, Top = 134, AutoSize = true };
             gbOut.Controls.Add(lblFactor);
             UpdateFactorLabel();
-            y += 144;
+            y += 178;
 
-            var gbLn = new GroupBox { Text = "선도 옵션", Left = 6, Top = y, Width = 392, Height = 152 };
+            var gbLn = new GroupBox { Text = "선도 옵션 / 제원", Left = 6, Top = y, Width = GW, Height = 250 };
             tabB.Controls.Add(gbLn);
-            chkDeck = new CheckBox { Text = "갑판선(Sheer line) / 갑판 가장자리 그리기", Left = 12, Top = 22, Width = 370, Checked = true };
+            chkDeck = new CheckBox { Text = "갑판선(Sheer line) / 갑판 가장자리 그리기", Left = 14, Top = 28, Width = 520, Checked = true };
             gbLn.Controls.Add(chkDeck);
-            chkSmooth = new CheckBox { Text = "버톡 라인 스무딩 (기존 방식 대체 시에만 적용, 표 값은 그대로)", Left = 12, Top = 48, Width = 370, Checked = true };
+            chkSmooth = new CheckBox { Text = "버톡 라인 스무딩 (기존 방식으로 대체된 버톡에만 적용)", Left = 14, Top = 54, Width = 520, Checked = true };
             gbLn.Controls.Add(chkSmooth);
-            chkExact = new CheckBox { Text = "버톡 정밀 추적 (벌브 선수 대응, 권장)", Left = 12, Top = 68, Width = 370, Checked = true };
+            chkExact = new CheckBox { Text = "버톡 정밀 추적 (벌브 선수 대응, 권장)", Left = 14, Top = 80, Width = 520, Checked = true };
             gbLn.Controls.Add(chkExact);
-            AddLabel("선명", 12, 92, gbLn);
-            txtShip = AddText("", 48, 89, 150, gbLn);
-            AddLabel("척도", 212, 92, gbLn);
-            txtScale = AddText("1:100", 248, 89, 70, gbLn);
-            AddLabel("형심 D (m)", 12, 124, gbLn);
-            txtDepth = AddText("", 84, 121, 60, gbLn);
-            AddLabel("설계 흘수 T (m)", 160, 124, gbLn);
-            txtDraft = AddText("", 262, 121, 60, gbLn);
-            AddLabel("(비우면 주요 치수에 쓰지 않음)", 12, 142, gbLn);
+            AddLabel("선명", 14, 118, gbLn);
+            txtShip = AddText("", 60, 115, 200, gbLn);
+            AddLabel("척도", 290, 118, gbLn);
+            txtScale = AddText("1:100", 336, 115, 90, gbLn);
+            AddLabel("제원 (m, 비우면 도면에 쓰지 않음)", 14, 152, gbLn);
+            AddLabel("DEPTH TO MAIN DK", 14, 182, gbLn);
+            txtDepth = AddText("", 160, 179, 90, gbLn);
+            AddLabel("DEPTH TO UPPER DK", 280, 182, gbLn);
+            txtUpperDepth = AddText("", 430, 179, 100, gbLn);
+            AddLabel("DRAFT DESIGN", 14, 214, gbLn);
+            txtDraft = AddText("", 160, 211, 90, gbLn);
 
             // ===== 버튼 =====
-            var ok = new Button { Text = "생성", Left = 230, Top = 476, Width = 90 };
-            var cancel = new Button { Text = "취소", Left = 328, Top = 476, Width = 90, DialogResult = DialogResult.Cancel };
+            var ok = new Button { Text = "생성", Left = 400, Top = 738, Width = 90, Height = 30 };
+            var cancel = new Button { Text = "취소", Left = 500, Top = 738, Width = 90, Height = 30, DialogResult = DialogResult.Cancel };
             ok.Click += OnOk;
             Controls.Add(ok);
             Controls.Add(cancel);
-            Controls.Add(new Label { Text = PlugInInfo.Credit, Left = 12, Top = 481, AutoSize = true, ForeColor = Color.Gray });
+            Controls.Add(new Label { Text = PlugInInfo.Credit, Left = 12, Top = 746, AutoSize = true, ForeColor = Color.Gray });
             AcceptButton = ok;
             CancelButton = cancel;
+
+            ApplyHullDefaults(bbox);
+        }
+
+        // 선체 바운딩 박스로 초기값 채움: A.P./F.P. = x 최소/최대, 수선 = 1 m 간격으로 최고 높이까지,
+        // 버톡 = 2 m 부터 1 m 간격으로 최대 반폭까지 (추가 값 0.5, 1, 1.5 m). 값은 모두 현재 단위(모델 단위)로 환산
+        void ApplyHullDefaults(BoundingBox bb)
+        {
+            if (!bb.IsValid) return;
+            double um = UnitMeters(cmbFrom.SelectedItem.ToString());
+            if (um <= 0) return;
+            double perM = 1.0 / um;                                   // 1 m 가 현재 단위로 얼마인가
+            double length = bb.Max.X - bb.Min.X;
+            if (length <= 0) return;
+
+            txtAp.Text = N(Math.Round(bb.Min.X, 3));
+            txtFp.Text = N(Math.Round(bb.Max.X, 3));
+
+            double topM = Math.Max(bb.Max.Z, 0.0) * um;
+            int wlEnd = (int)Math.Floor(topM + 1e-9);
+            if (wlEnd >= 1)
+            {
+                txtWlStart.Text = N(perM);
+                txtWlEnd.Text = N(wlEnd * perM);
+                txtWlStep.Text = N(perM);
+                txtWlExtra.Text = N(0.5 * perM);
+            }
+
+            double halfBeamM = Math.Max(Math.Abs(bb.Min.Y), Math.Abs(bb.Max.Y)) * um;
+            int btEnd = (int)Math.Floor(halfBeamM + 1e-9);
+            if (btEnd >= 2)
+            {
+                txtBtStart.Text = N(2 * perM);
+                txtBtEnd.Text = N(btEnd * perM);
+                txtBtStep.Text = N(perM);
+                txtBtExtra.Text = N(0.5 * perM) + ", " + N(perM) + ", " + N(1.5 * perM);
+            }
+            UpdateSpacingLabel();
         }
 
         static string N(double v)
@@ -440,9 +456,9 @@ namespace OffsetGenPlugin
             if (double.TryParse(txtAp.Text, NumberStyles.Float, Inv, out ap) &&
                 double.TryParse(txtFp.Text, NumberStyles.Float, Inv, out fp) &&
                 double.TryParse(txtStaDiv.Text, NumberStyles.Float, Inv, out div) && fp > ap && div > 0)
-                lblSpacing.Text = "스테이션 간격 = (FP - AP) / 분할 수 = " + N((fp - ap) / div) + "   (Lpp = " + N(fp - ap) + ")";
+                lblSpacing.Text = "스테이션 간격 = (F.P. - A.P.) / 분할 수 = " + N((fp - ap) / div) + "   (Lpp = " + N(fp - ap) + ")";
             else
-                lblSpacing.Text = "스테이션 간격 = (FP - AP) / 분할 수";
+                lblSpacing.Text = "스테이션 간격 = (F.P. - A.P.) / 분할 수";
         }
 
         void OnOk(object sender, EventArgs e)
@@ -451,7 +467,7 @@ namespace OffsetGenPlugin
             if (!double.TryParse(txtAp.Text, NumberStyles.Float, Inv, out ap) ||
                 !double.TryParse(txtFp.Text, NumberStyles.Float, Inv, out fp) || fp <= ap)
             {
-                MessageBox.Show("AP, FP 값을 확인하세요. (FP > AP)");
+                MessageBox.Show("A.P., F.P. 위치를 확인하세요. (F.P. > A.P.)");
                 return;
             }
             double div;
@@ -504,7 +520,7 @@ namespace OffsetGenPlugin
             foreach (double no in numbers)
             {
                 if (!double.IsNaN(lastNo) && Math.Abs(no - lastNo) < 1e-6) continue;
-                Stations.Add(chkFpOrigin.Checked ? fp - no * spacing : ap + no * spacing);
+                Stations.Add(rbFpOrigin.Checked ? fp - no * spacing : ap + no * spacing);
                 lastNo = no;
             }
 
@@ -554,9 +570,10 @@ namespace OffsetGenPlugin
             DeckLine = chkDeck.Checked;
             SmoothButtocks = chkSmooth.Checked;
             ExactButtocks = chkExact.Checked;
-            FpOrigin = chkFpOrigin.Checked;
+            FpOrigin = rbFpOrigin.Checked;
             double dv;
             DepthM = double.TryParse(txtDepth.Text, NumberStyles.Float, Inv, out dv) && dv > 0 ? (double?)dv : null;
+            UpperDepthM = double.TryParse(txtUpperDepth.Text, NumberStyles.Float, Inv, out dv) && dv > 0 ? (double?)dv : null;
             DraftM = double.TryParse(txtDraft.Text, NumberStyles.Float, Inv, out dv) && dv > 0 ? (double?)dv : null;
             ShipName = txtShip.Text;
             ScaleText = txtScale.Text;
@@ -907,122 +924,19 @@ namespace OffsetGenPlugin
     }
 
     // ---------------------------------------------------------------
-    // DXF 빌더 (R12 ASCII: LINE, POLYLINE, TEXT)
-    // ---------------------------------------------------------------
-    public class DxfBuilder
-    {
-        static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-        readonly StringBuilder ents = new StringBuilder();
-        readonly List<KeyValuePair<string, int>> layers = new List<KeyValuePair<string, int>>();
-
-        public void AddLayer(string name, int color)
-        {
-            layers.Add(new KeyValuePair<string, int>(name, color));
-        }
-
-        public void Line(string layer, double x1, double y1, double x2, double y2)
-        {
-            G(ents, 0, "LINE"); G(ents, 8, layer);
-            G(ents, 10, x1); G(ents, 20, y1); G(ents, 30, 0.0);
-            G(ents, 11, x2); G(ents, 21, y2); G(ents, 31, 0.0);
-        }
-
-        public void AddPolyline(string layer, List<Point2d> pts)
-        {
-            if (pts == null || pts.Count < 2) return;
-            G(ents, 0, "POLYLINE"); G(ents, 8, layer);
-            G(ents, 66, "1");
-            G(ents, 10, 0.0); G(ents, 20, 0.0); G(ents, 30, 0.0);
-            G(ents, 70, "0");
-            foreach (var p in pts)
-            {
-                G(ents, 0, "VERTEX"); G(ents, 8, layer);
-                G(ents, 10, p.X); G(ents, 20, p.Y); G(ents, 30, 0.0);
-            }
-            G(ents, 0, "SEQEND"); G(ents, 8, layer);
-        }
-
-        // hAlign: 0=왼쪽(기준선), 1=가운데(세로 중간), 2=오른쪽(세로 중간), 3=왼쪽(세로 중간)
-        public void Text(string layer, double x, double y, double h, string text, int hAlign)
-        {
-            G(ents, 0, "TEXT"); G(ents, 8, layer);
-            G(ents, 10, x); G(ents, 20, y); G(ents, 30, 0.0);
-            G(ents, 40, h);
-            G(ents, 1, Ascii(text));
-            if (hAlign != 0)
-            {
-                int h72 = hAlign == 3 ? 0 : hAlign;
-                G(ents, 72, h72.ToString(Inv));
-                G(ents, 73, "2");
-                G(ents, 11, x); G(ents, 21, y); G(ents, 31, 0.0);
-            }
-        }
-
-        // R12 ASCII에서 깨지는 문자는 ?로 바꿈
-        static string Ascii(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            var sb = new StringBuilder();
-            foreach (char c in s)
-                sb.Append(c >= 32 && c <= 126 ? c : '?');
-            return sb.ToString();
-        }
-
-        public void Save(string path)
-        {
-            var sb = new StringBuilder();
-
-            // HEADER
-            G(sb, 0, "SECTION"); G(sb, 2, "HEADER");
-            G(sb, 9, "$ACADVER"); G(sb, 1, "AC1009");
-            G(sb, 0, "ENDSEC");
-
-            // TABLES (선종류 + 레이어)
-            G(sb, 0, "SECTION"); G(sb, 2, "TABLES");
-            G(sb, 0, "TABLE"); G(sb, 2, "LTYPE"); G(sb, 70, "1");
-            G(sb, 0, "LTYPE"); G(sb, 2, "CONTINUOUS"); G(sb, 70, "64");
-            G(sb, 3, "Solid line"); G(sb, 72, "65"); G(sb, 73, "0"); G(sb, 40, "0.0");
-            G(sb, 0, "ENDTAB");
-            G(sb, 0, "TABLE"); G(sb, 2, "LAYER"); G(sb, 70, layers.Count.ToString(Inv));
-            foreach (var l in layers)
-            {
-                G(sb, 0, "LAYER"); G(sb, 2, l.Key); G(sb, 70, "0");
-                G(sb, 62, l.Value.ToString(Inv)); G(sb, 6, "CONTINUOUS");
-            }
-            G(sb, 0, "ENDTAB");
-            G(sb, 0, "ENDSEC");
-
-            // ENTITIES
-            G(sb, 0, "SECTION"); G(sb, 2, "ENTITIES");
-            sb.Append(ents.ToString());
-            G(sb, 0, "ENDSEC");
-            G(sb, 0, "EOF");
-
-            File.WriteAllText(path, sb.ToString(), Encoding.ASCII);
-        }
-
-        static void G(StringBuilder sb, int code, string value)
-        {
-            sb.Append(code.ToString(Inv)).Append("\r\n").Append(value).Append("\r\n");
-        }
-
-        static void G(StringBuilder sb, int code, double value)
-        {
-            G(sb, code, value.ToString("0.######", Inv));
-        }
-    }
-
-    // ---------------------------------------------------------------
-    // DXF 도면 작성 (선도 + 오프셋 표 + 주요 치수 / 표제란 + 이중 테두리/구역 표시)
-    //   배치: 위 = [반폭 표] [Body plan 상자] [높이 표] (세 칸의 위/아래 선을 맞춤), 중간 = Sheer plan,
-    //         그 아래 = Half-breadth plan, 맨 아래 = 주요 치수(왼쪽) / 표제란(오른쪽)
-    //   글자 높이 0 = 선체 길이에 맞춰 자동 (길이 / 170)
+    // DXF 도면 작성 (선도 + 오프셋 표 + 제원 / 표제란 + 이중 테두리/구역 표시)
+    //   참고 도면(사진)과 같은 구성: 위 = [반폭 표] [Body plan] [높이 표], 중간 = Sheer plan, 아래 = Half-breadth plan,
+    //   맨 아래 가운데 = 제원, 오른쪽 위 = 개정란, 오른쪽 아래 = 표제란 (그 위는 다른 정보용 빈 공간)
+    //   색: 격자 초록, 곡선 노랑, 프로파일/갑판선 자홍, 라벨 시안, 중심선/기선/숫자 흰색, 탄젠트 점 빨강
+    //   모든 크기는 선체 길이 u 에 대한 비율, 글자 높이 0 = 자동 (u x 0.005)
     // ---------------------------------------------------------------
     public static class DxfWriter
     {
         const string LayerGrid = "OFFSET_GRID";
         const string LayerText = "OFFSET_TEXT";
         const string LayerFrame = "OFFSET_FRAME";
+        const string LayerPart = "OFFSET_PART";
+        const string LayerTitle = "OFFSET_TITLE";
         const string LinesGrid = "LINES_GRID";
         const string LinesStation = "LINES_STATION";
         const string LinesWaterline = "LINES_WATERLINE";
@@ -1030,6 +944,8 @@ namespace OffsetGenPlugin
         const string LinesProfile = "LINES_PROFILE";
         const string LinesDeck = "LINES_DECK";
         const string LinesRef = "LINES_REF";
+        const string LinesLabel = "LINES_LABEL";
+        const string LinesMark = "LINES_MARK";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
         // lines가 null이면 표만 그림. textH <= 0 이면 자동 크기
@@ -1040,13 +956,17 @@ namespace OffsetGenPlugin
             b.AddLayer(LayerGrid, 3);
             b.AddLayer(LayerText, 7);
             b.AddLayer(LayerFrame, 7);
+            b.AddLayer(LayerPart, 3);
+            b.AddLayer(LayerTitle, 6);
             b.AddLayer(LinesGrid, 3);
-            b.AddLayer(LinesStation, 5);
-            b.AddLayer(LinesWaterline, 1);
-            b.AddLayer(LinesButtock, 4);
-            b.AddLayer(LinesProfile, 2);
+            b.AddLayer(LinesStation, 2);
+            b.AddLayer(LinesWaterline, 2);
+            b.AddLayer(LinesButtock, 2);
+            b.AddLayer(LinesProfile, 6);
             b.AddLayer(LinesDeck, 6);
-            b.AddLayer(LinesRef, 30);
+            b.AddLayer(LinesRef, 7);
+            b.AddLayer(LinesLabel, 4);
+            b.AddLayer(LinesMark, 1);
 
             var rowLabels = new List<string>();
             foreach (double x in data.StationX)
@@ -1070,69 +990,70 @@ namespace OffsetGenPlugin
                 return;
             }
 
-            // ---------- 크기 / 위치 계산 (선체 길이 u 에 대한 비율, 참고 도면 비율에 맞춤) ----------
+            // ---------- 크기 (선체 길이 u 에 대한 비율, 참고 도면 실측) ----------
             double xMin = lines.Bbox.Min.X, xMax = lines.Bbox.Max.X;
-            double zMin = lines.Bbox.Min.Z, zMax = lines.Bbox.Max.Z;
+            double zLow = Math.Min(0.0, lines.Bbox.Min.Z);          // 기선 z = 0 (그 아래로 내려간 선체가 있으면 포함)
+            double zMax = lines.Bbox.Max.Z;
             double halfBeam = Math.Max(Math.Abs(lines.Bbox.Min.Y), Math.Abs(lines.Bbox.Max.Y));
             double u = xMax - xMin;
             if (halfBeam < 1e-9) halfBeam = u * 0.1;
-            double bodyH = zMax - zMin;
+            double bodyH = zMax - zLow;
+            double um = OffsetGenDialog.UnitMeters(unitName);
+            if (um <= 0) um = 1.0;
 
-            double tH = textH > 0 ? textH : u * 0.005;          // 기본 글자 높이 (라벨)
+            double tH = textH > 0 ? textH : u * 0.005;               // 기본 글자 높이 (스테이션 번호 등)
 
-            // 위쪽 띠: 왼쪽 표 | Body plan 상자 | 오른쪽 표 (참고 도면: 표 0.46u / 상자 0.16u / 표 0.36u)
+            // 시안 라벨 글자 높이: 가장 촘촘한 수선 간격에 맞춰 (사진처럼 모든 선에 작은 라벨)
+            double minGap = double.MaxValue;
+            var wlSorted = new List<double>(data.Waterlines); wlSorted.Sort();
+            for (int i = 1; i < wlSorted.Count; i++)
+                if (wlSorted[i] - wlSorted[i - 1] > 1e-9) minGap = Math.Min(minGap, wlSorted[i] - wlSorted[i - 1]);
+            double cyH = minGap < double.MaxValue ? 0.85 * minGap : 0.7 * tH;
+            cyH = Math.Max(0.32 * tH, Math.Min(0.7 * tH, cyH));
+            double labW = 9.0 * 0.9 * cyH + 0.5 * tH;                // "23.0 W.L." 폭
+
+            // 위쪽 띠: 왼쪽 표 | Body plan (라벨 포함) | 오른쪽 표
             double cxBody = xMin + 0.547 * u;
-            double boxLeft = cxBody - halfBeam - 1.5 * tH;
-            double boxRight = cxBody + halfBeam + 6.5 * tH;      // 오른쪽에 워터라인 라벨 폭
+            double bodyL = cxBody - halfBeam, bodyR = cxBody + halfBeam;
+            double outL = bodyL - labW - 0.6 * tH, outR = bodyR + labW + 0.6 * tH;
             double gap = 0.015 * u;
             double tLeft = xMin - 0.012 * u;
-            double availL = Math.Max(boxLeft - gap - tLeft, u * 0.2);
-            double rx = boxRight + gap;
+            double availL = Math.Max(outL - gap - tLeft, u * 0.2);
+            double rx = outR + gap;
             double availR = Math.Max(xMax - rx, u * 0.2);
 
-            // 표 글자: tH 이하, 칸 폭이 모자라면 줄임. 표는 칸을 가득 채우도록 열 폭/행 높이를 늘림
             double thT = Math.Min(tH * 0.9, Math.Min(availL / t1.UnitsWidth(), availR / t2.UnitsWidth()));
-            double bodyNeed = bodyH + 10.0 * tH;                 // Body plan + 위아래 라벨/제목
+            double bodyNeed = bodyH + 0.045 * u;                      // Body plan + 아래 제목
             double hBand = Math.Max(0.148 * u, Math.Max(bodyNeed, Math.Max(t1.UnitsHeight(), t2.UnitsHeight()) * thT));
-            double bandBottom = zMax + 0.040 * u;                // Sheer plan 제목 위
+            double bandBottom = zMax + 0.040 * u;
             double bandTop = bandBottom + hBand;
-            double bodyBase = bandBottom + 3.0 * tH + (hBand - bodyNeed) / 2.0;   // Body plan 기선 (상자 안에서 세로 가운데)
+            double bodyBase = bandBottom + 0.030 * u + (hBand - bodyNeed) / 2.0;
+
+            double planGap = 0.069 * u;                               // Sheer plan 아래 ~ Half-breadth plan 위 (스테이션 번호 자리)
+            double yHB = zLow - planGap - halfBeam;                   // Half-breadth plan 중심선 (아래쪽)
 
             // ---------- 선도 ----------
-            double planGap = 0.069 * u;                           // Sheer plan 아래 ~ Half-breadth plan 위 (스테이션 라벨 자리)
-            double yHB = DrawLines(b, lines, num, data.StationX, data.Waterlines, data.Buttocks, fmt, tH, tH,
-                                   bodyBase, cxBody, bandBottom, bandTop, boxLeft, boxRight, planGap);
+            DrawLines(b, lines, data, num, fmt, u, tH, cyH, labW, zLow, bodyBase, cxBody, yHB);
 
-            // ---------- 표 (Body plan 상자와 위/아래 맞춤) ----------
+            // ---------- 표 (두 표의 위/아래 선을 맞춤) ----------
             t1.Draw(b, tLeft, bandTop, thT, LayerGrid, LayerText, availL, hBand);
             t2.Draw(b, rx, bandTop, thT, LayerGrid, LayerText, availR, hBand);
 
-            // ---------- 아래쪽: 주요 치수 (왼쪽), 오른쪽은 다른 정보용 빈 공간 + 표제란 ----------
-            double regionTop = yHB - 0.030 * u;
-            double regionH = 0.176 * u;                           // 참고 도면의 아래쪽 영역 높이
-            double hPart = DrawParticulars(b, lines, num, xMin, regionTop, tH);
-
-            var rows = new List<string[]>();
-            rows.Add(new[] { "SHIP", string.IsNullOrEmpty(lines.ShipName) ? "-" : lines.ShipName });
-            rows.Add(new[] { "DRAWING", "LINES & OFFSET PLAN" });
-            rows.Add(new[] { "SCALE", string.IsNullOrEmpty(lines.ScaleText) ? "-" : lines.ScaleText });
-            rows.Add(new[] { "DATE", DateTime.Now.ToString("yyyy-MM-dd", Inv) });
-            rows.Add(new[] { "UNIT", string.IsNullOrEmpty(unitName) ? "-" : unitName });
-            rows.Add(new[] { "STATION", num != null && num.Valid ? (num.FpOrigin ? "F.P. = 0 TO A.P." : "A.P. = 0 TO F.P.") : "-" });
-            rows.Add(new[] { "NOTE", "DIMENSIONS FROM MODEL BBOX" });
-            double tI = tH * 0.9;
-            double hInfo = rows.Count * tI * 2.0;
-            double regionBottom = regionTop - Math.Max(regionH, hPart);
-            DrawInfoBlock(b, xMax - InfoBlockWidth(rows, tI), regionBottom + hInfo, rows, tI);   // 오른쪽 아래, 그 위는 빈 공간
-
-            // ---------- 이중 테두리 + 구역 표시 (A,B,C / 1~6) ----------
-            double iL = xMin - 0.045 * u, iR = xMax + 0.050 * u;
-            double iB = regionBottom - 0.012 * u, iT = bandTop + 0.075 * u;
+            // ---------- 테두리 (이중) + 구역 표시 ----------
+            double lineEnd = yHB - 0.012 * u;                         // 스테이션선 아래 끝
+            double regionTop = lineEnd - 0.030 * u;
+            double regionBottom = regionTop - 0.176 * u;
+            double iL = xMin - labW - 0.025 * u, iR = xMax + labW + 0.025 * u;
+            double iB = regionBottom, iT = bandTop + 0.075 * u;
             double fb = 0.011 * u;
             DrawFrame(b, iL, iB, iR, iT, fb, tH);
 
-            // 오른쪽 위: 개정란 자리 (표 위의 여백)
-            DrawRevisionBox(b, iR - 0.012 * u - 0.17 * u, iT - 0.006 * u, 0.17 * u, tH * 0.7);
+            // ---------- 제원 (하부 중앙) ----------
+            DrawParticulars(b, lines, num, (iL + iR) / 2.0, regionTop, u, um);
+
+            // ---------- 개정란 (오른쪽 위 모서리), 표제란 (오른쪽 아래 모서리) ----------
+            DrawRevisionBox(b, iR, iT, 0.150 * u, 0.0097 * u);
+            DrawTitleBlock(b, iR, iB, 0.17 * u, 0.09 * u, "Lines & Offset Plan", u * 0.0085);
 
             b.Save(path);
         }
@@ -1142,8 +1063,8 @@ namespace OffsetGenPlugin
         static void DrawFrame(DxfBuilder b, double iL, double iB, double iR, double iT, double fb, double tH)
         {
             double oL = iL - fb, oR = iR + fb, oB = iB - fb, oT = iT + fb;
-            Rect(b, oL, oB, oR, oT);
-            Rect(b, iL, iB, iR, iT);
+            Rect(b, LayerFrame, oL, oB, oR, oT);
+            Rect(b, LayerFrame, iL, iB, iR, iT);
 
             const int nCol = 6, nRow = 3;
             double cw = (iR - iL) / nCol, rh = (iT - iB) / nRow;
@@ -1178,252 +1099,233 @@ namespace OffsetGenPlugin
             }
         }
 
-        static void Rect(DxfBuilder b, double l, double bt, double r, double t)
+        static void Rect(DxfBuilder b, string layer, double l, double bt, double r, double t)
         {
-            b.Line(LayerFrame, l, bt, r, bt);
-            b.Line(LayerFrame, r, bt, r, t);
-            b.Line(LayerFrame, r, t, l, t);
-            b.Line(LayerFrame, l, t, l, bt);
+            b.Line(layer, l, bt, r, bt);
+            b.Line(layer, r, bt, r, t);
+            b.Line(layer, r, t, l, t);
+            b.Line(layer, l, t, l, bt);
         }
 
-        // -------------------- 개정란 자리 (비어 있는 표) --------------------
-        static void DrawRevisionBox(DxfBuilder b, double ox, double oy, double width, double th)
+        // -------------------- 제원 (하부 중앙, 초록 큰 글씨) --------------------
+        // cx = 가운데 x, top = 제목 기준선 y. 사진: 제목(밑줄) + 항목 6줄, 값은 오른쪽 정렬, 단위 m
+        static void DrawParticulars(DxfBuilder b, LinesData d, StationNumbering num, double cx, double top, double u, double um)
         {
-            double[] cols = { 0.10, 0.52, 0.20, 0.18 };            // REV | DESCRIPTION | DATE | BY
-            string[] heads = { "REV", "DESCRIPTION", "DATE", "BY" };
-            double rowH = th * 2.2;
-            int nRows = 3;                                          // 머리글 + 빈 줄 2개
-            double totalH = rowH * nRows;
-            for (int r = 0; r <= nRows; r++) b.Line(LayerGrid, ox, oy - rowH * r, ox + width, oy - rowH * r);
-            double x = ox;
-            for (int c = 0; c <= cols.Length; c++)
+            var rows = new List<string[]>();
+            double loa = (d.Bbox.Max.X - d.Bbox.Min.X) * um;
+            rows.Add(new[] { "LENGTH O.A", "approx. " + loa.ToString("0.00", Inv) });
+            if (num != null && num.Valid)
+                rows.Add(new[] { "LENGTH B.P", "approx. " + ((num.FpX - num.ApX) * um).ToString("0.00", Inv) });
+            double beam = 2.0 * Math.Max(Math.Abs(d.Bbox.Min.Y), Math.Abs(d.Bbox.Max.Y)) * um;
+            rows.Add(new[] { "BREADTH", beam.ToString("0.00", Inv) });
+            if (d.DepthM.HasValue) rows.Add(new[] { "DEPTH TO MAIN DK", d.DepthM.Value.ToString("0.00", Inv) });
+            if (d.UpperDepthM.HasValue) rows.Add(new[] { "DEPTH TO UPPER DK", d.UpperDepthM.Value.ToString("0.00", Inv) });
+            if (d.DraftM.HasValue) rows.Add(new[] { "DRAFT DESIGN", d.DraftM.Value.ToString("0.00", Inv) });
+
+            double hHead = 0.0135 * u, h = 0.0078 * u, pitch = 0.0125 * u;
+            double width = 0.205 * u;                                // 제목 폭 (사진 비율)
+            double valRight = 0.172 * u;
+            double ox = cx - width / 2.0;
+
+            b.Text(LayerPart, ox, top, hHead, "PRINCIPAL PARTICULARS", 0);
+            b.Line(LayerPart, ox, top - 0.0035 * u, ox + width, top - 0.0035 * u);
+            for (int i = 0; i < rows.Count; i++)
             {
-                b.Line(LayerGrid, x, oy, x, oy - totalH);
-                if (c < cols.Length)
-                {
-                    b.Text(LayerText, x + width * cols[c] / 2.0, oy - rowH / 2.0, th, heads[c], 1);
-                    x += width * cols[c];
-                }
+                double ty = top - 0.0155 * u - i * pitch;
+                b.Text(LayerPart, ox, ty, h, rows[i][0], 3);
+                b.Text(LayerPart, ox + valRight, ty, h, rows[i][1], 2);
+                b.Text(LayerPart, ox + valRight + 0.007 * u, ty, h, "m", 3);
             }
-            b.Text(LayerText, ox + width, oy + th * 1.2, th, "REVISIONS", 2);
         }
 
-        // -------------------- 라벨 겹침 방지 --------------------
-        // 오름차순 위치 중 앞 라벨과 minGap 이상 떨어진 것만 남김 (처음과 마지막은 우선 유지)
+        // -------------------- 개정란 (오른쪽 위 모서리에 붙임) --------------------
+        // 사진: REVISIONS 제목 행 / ZONE REV DESCRIPTION DATE APPROVED / ALL - INITIAL ISSUE (날짜) (빈칸)
+        static void DrawRevisionBox(DxfBuilder b, double right, double top, double width, double rowH)
+        {
+            double ox = right - width;
+            double[] cols = { 0.12, 0.08, 0.34, 0.24, 0.22 };
+            string[] heads = { "ZONE", "REV", "DESCRIPTION", "DATE", "APPROVED" };
+            string[] vals = { "ALL", "-", "INITIAL ISSUE", DateTime.Now.ToString("yyyy/MM/dd", Inv), "" };
+            double th = rowH * 0.38;
+            Rect(b, LayerFrame, ox, top - 3 * rowH, right, top);
+            b.Line(LayerFrame, ox, top - rowH, right, top - rowH);
+            b.Line(LayerFrame, ox, top - 2 * rowH, right, top - 2 * rowH);
+            b.Text(LayerText, ox + width / 2.0, top - rowH / 2.0, th, "REVISIONS", 1);
+            double x = ox;
+            for (int c = 0; c < cols.Length; c++)
+            {
+                double w = width * cols[c];
+                if (c > 0) b.Line(LayerFrame, x, top - rowH, x, top - 3 * rowH);
+                b.Text(LayerText, x + w / 2.0, top - 1.5 * rowH, th, heads[c], 1);
+                if (vals[c].Length > 0)
+                    b.Text(c == 3 ? LayerTitle : LayerText, x + w / 2.0, top - 2.5 * rowH, th, vals[c], 1);
+                x += w;
+            }
+        }
+
+        // -------------------- 표제란 (오른쪽 아래 모서리, 제목만) --------------------
+        static void DrawTitleBlock(DxfBuilder b, double right, double bottom, double width, double height, string title, double th)
+        {
+            Rect(b, LayerFrame, right - width, bottom, right, bottom + height);
+            b.Text(LayerTitle, right - width / 2.0, bottom + height / 2.0, th, title, 1);
+        }
+
+        // -------------------- 라벨/제목 도우미 --------------------
+        // 오름차순 위치 중 앞 라벨과 minGap 이상 떨어진 것만 남김
         static List<int> ThinIndexes(List<double> pos, double minGap)
         {
             var keep = new List<int>();
             double last = double.NegativeInfinity;
             for (int i = 0; i < pos.Count; i++)
-            {
                 if (pos[i] - last >= minGap) { keep.Add(i); last = pos[i]; }
-            }
             return keep;
         }
 
-        // -------------------- 주요 치수 (높이를 돌려줌) --------------------
-        static double DrawParticulars(DxfBuilder b, LinesData d, StationNumbering num, double ox, double oy, double tH)
+        // 가운데 정렬 시안 제목 + 밑줄 (사진의 Body plan 아래 제목)
+        static void UnderlinedTitle(DxfBuilder b, double cx, double y, double h, string text)
         {
-            double um = OffsetGenDialog.UnitMeters(d.UnitName);   // 출력 단위 -> m
-            if (um <= 0) um = 1.0;
-            var rows = new List<string[]>();   // 항목, 값(m)
-            double loa = (d.Bbox.Max.X - d.Bbox.Min.X) * um;
-            rows.Add(new[] { "LENGTH O.A", "approx. " + loa.ToString("0.00", Inv) });
-            if (num != null && num.Valid)
-                rows.Add(new[] { "LENGTH B.P", ((num.FpX - num.ApX) * um).ToString("0.00", Inv) });
-            double beam = 2.0 * Math.Max(Math.Abs(d.Bbox.Min.Y), Math.Abs(d.Bbox.Max.Y)) * um;
-            rows.Add(new[] { "BREADTH", "approx. " + beam.ToString("0.00", Inv) });
-            if (d.DepthM.HasValue) rows.Add(new[] { "DEPTH", d.DepthM.Value.ToString("0.00", Inv) });
-            if (d.DraftM.HasValue) rows.Add(new[] { "DRAFT DESIGN", d.DraftM.Value.ToString("0.00", Inv) });
-
-            double h = tH * 0.9;                 // 항목 글자 높이 (작게)
-            double rowH = tH * 1.9;
-            int maxKey = 1, maxVal = 1;
-            foreach (var r in rows) { if (r[0].Length > maxKey) maxKey = r[0].Length; if (r[1].Length > maxVal) maxVal = r[1].Length; }
-            double valRight = (maxKey * 0.95 + 2.5 + maxVal * 0.95) * h;
-
-            b.Text(LayerText, ox, oy, tH * 1.5, "PRINCIPAL PARTICULARS", 0);
-            b.Line(LayerGrid, ox, oy - tH * 0.7, ox + valRight + 3.5 * h, oy - tH * 0.7);
-            for (int i = 0; i < rows.Count; i++)
-            {
-                double ty = oy - tH * 2.6 - i * rowH;
-                b.Text(LayerText, ox, ty, h, rows[i][0], 3);
-                b.Text(LayerText, ox + valRight, ty, h, rows[i][1], 2);
-                b.Text(LayerText, ox + valRight + 1.3 * h, ty, h, "m", 3);
-            }
-            return tH * 2.6 + rows.Count * rowH;
+            b.Text(LinesLabel, cx, y, h, text, 1);
+            double w = text.Length * 0.9 * h;
+            b.Line(LinesLabel, cx - w / 2.0, y - h * 0.8, cx + w / 2.0, y - h * 0.8);
         }
 
-        // -------------------- 표제란 --------------------
-        static double InfoBlockWidth(List<string[]> rows, double tH)
+        // 작은 사각형 (탄젠트 점 / 스테이션선 끝 표시)
+        static void SmallBox(DxfBuilder b, string layer, double cx, double cy, double w, double h)
         {
-            int maxLen = 1, maxKey = 1;
-            foreach (var r in rows)
-            {
-                if (r[1].Length > maxLen) maxLen = r[1].Length;
-                if (r[0].Length > maxKey) maxKey = r[0].Length;
-            }
-            return (tH * 0.9 * maxKey + tH * 2.0) + (tH * 0.9 * maxLen + tH * 2.0);
+            b.FilledRect(layer, cx, cy, w, h);
         }
 
-        static void DrawInfoBlock(DxfBuilder b, double ox, double oy, List<string[]> rows, double tH)
-        {
-            int maxKey = 1;
-            foreach (var r in rows) if (r[0].Length > maxKey) maxKey = r[0].Length;
-            double rowH = tH * 2.0;
-            double keyW = tH * 0.9 * maxKey + tH * 2.0;
-            double totalW = InfoBlockWidth(rows, tH);
-            double totalH = rowH * rows.Count;
-
-            for (int r = 0; r <= rows.Count; r++)
-                b.Line(LayerGrid, ox, oy - rowH * r, ox + totalW, oy - rowH * r);
-            b.Line(LayerGrid, ox, oy, ox, oy - totalH);
-            b.Line(LayerGrid, ox + keyW, oy, ox + keyW, oy - totalH);
-            b.Line(LayerGrid, ox + totalW, oy, ox + totalW, oy - totalH);
-
-            for (int r = 0; r < rows.Count; r++)
-            {
-                double ty = oy - rowH * r - rowH / 2.0;
-                b.Text(LayerText, ox + tH * 0.5, ty, tH, rows[r][0], 3);
-                b.Text(LayerText, ox + keyW + tH * 0.5, ty, tH, rows[r][1], 3);
-            }
-        }
-
-        // -------------------- 선도 (Half-breadth plan 중심선 y 를 돌려줌) --------------------
-        static double DrawLines(DxfBuilder b, LinesData d, StationNumbering num,
-                                List<double> stations, List<double> waterlines, List<double> buttocks,
-                                string fmt, double tH, double lblH,
-                                double bodyBase, double cxBody, double bandBottom, double bandTop,
-                                double boxLeft, double boxRight, double planGap)
+        // -------------------- 선도 --------------------
+        static void DrawLines(DxfBuilder b, LinesData d, OffsetData od, StationNumbering num, string fmt,
+                              double u, double tH, double cyH, double labW, double zLow,
+                              double bodyBase, double cxBody, double yHB)
         {
             double xMin = d.Bbox.Min.X, xMax = d.Bbox.Max.X;
-            double zMin = d.Bbox.Min.Z, zMax = d.Bbox.Max.Z;
-
+            double zMax = d.Bbox.Max.Z;
             double ySign = CurveUtil.YSign(d.Bbox);
             double halfBeam = Math.Max(Math.Abs(d.Bbox.Min.Y), Math.Abs(d.Bbox.Max.Y));
-            if (halfBeam < 1e-9) halfBeam = (xMax - xMin) * 0.1;
+            if (halfBeam < 1e-9) halfBeam = u * 0.1;
 
-            double xMid = (xMin + xMax) / 2.0;
-            double yHB = zMin - planGap - halfBeam;     // Half-breadth plan: Sheer plan 아래, 중심선(CL)이 아래쪽
-            double dyBody = bodyBase - zMin;            // Body plan의 z -> 도면 y 이동량
+            double dyBody = bodyBase - zLow;            // Body plan 의 z -> 도면 y 이동량
             double bodyTop = zMax + dyBody;
+            double bodyL = cxBody - halfBeam, bodyR = cxBody + halfBeam;
             bool numbered = num != null && num.Valid;
+            double midX = numbered ? (num.ApX + num.FpX) / 2.0 : (xMin + xMax) / 2.0;   // midship (스테이션 10)
+            double eps = u * 1e-6;
+            double lineBottom = yHB - 0.012 * u;
 
-            // ---- 뷰 제목 ----
-            b.Text(LayerText, xMin, zMax + tH * 3.5, tH * 1.5, "SHEER PLAN", 0);
-            b.Text(LayerText, xMin, yHB + halfBeam + tH * 3.5, tH * 1.5, "HALF-BREADTH PLAN", 0);
-            b.Text(LayerText, boxLeft + tH, bodyTop + tH * 4.5, tH * 1.5, "BODY PLAN", 0);
-            b.Text(LayerText, cxBody - halfBeam / 2.0, bodyTop + tH * 1.2, tH, "AFT", 1);
-            b.Text(LayerText, cxBody + halfBeam / 2.0, bodyTop + tH * 1.2, tH, "FWD", 1);
+            // 숫자 라벨 (미터)
+            var wlM = od.WaterlinesM;
+            var btM = od.ButtocksM;
 
-            // ---- Body plan 상자 (표와 위/아래를 맞춤) ----
-            b.Line(LayerGrid, boxLeft, bandBottom, boxRight, bandBottom);
-            b.Line(LayerGrid, boxLeft, bandTop, boxRight, bandTop);
-            b.Line(LayerGrid, boxLeft, bandBottom, boxLeft, bandTop);
-            b.Line(LayerGrid, boxRight, bandBottom, boxRight, bandTop);
+            // ---- 기준선 / 중심선 (흰색) ----
+            b.Line(LinesRef, xMin, 0.0, xMax, 0.0);                          // BL (Sheer plan)
+            b.Line(LinesRef, xMin, yHB, xMax, yHB);                          // CL (Half-breadth plan)
+            b.Line(LinesRef, cxBody, bodyBase, cxBody, bodyTop);             // CL (Body plan)
+            b.Line(LinesRef, bodyL, bodyBase, bodyR, bodyBase);              // BL (Body plan)
 
-            // ---- 기준선 / 중심선 ----
-            b.Line(LinesRef, xMin, zMin, xMax, zMin);                       // BL (Sheer plan)
-            b.Text(LayerText, xMax + tH * 0.5, zMin, lblH, "BL", 3);
-            b.Line(LinesRef, xMin, yHB, xMax, yHB);                         // CL (Half-breadth plan)
-            b.Text(LayerText, xMax + tH * 0.5, yHB, lblH, "CL", 3);
-            b.Line(LinesRef, cxBody, bodyBase, cxBody, bodyTop);            // CL (Body plan)
-            b.Text(LayerText, cxBody, bodyTop + tH * 2.8, lblH, "CL", 1);
+            // ---- 바깥 테두리 격자선 (초록) ----
+            b.Line(LinesGrid, xMin, zMax, xMax, zMax);                       // Sheer plan 위
+            b.Line(LinesGrid, xMin, yHB + halfBeam, xMax, yHB + halfBeam);   // Half-breadth plan 위
+            b.Line(LinesGrid, bodyL, bodyBase, bodyL, bodyTop);              // Body plan 좌/우/위
+            b.Line(LinesGrid, bodyR, bodyBase, bodyR, bodyTop);
+            b.Line(LinesGrid, bodyL, bodyTop, bodyR, bodyTop);
 
-            // ---- 스테이션 격자 + 라벨 (두 평면 사이, 겹치면 줄을 바꿔 엇갈리게) ----
-            var rowEnd = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
-            var order = new List<double>(stations);
-            order.Sort();
-            foreach (double x in stations)
+            // ---- 워터라인: 격자 (Sheer, Body plan) + 시안 라벨 (좌/우) ----
+            var order = new List<int>();
+            for (int i = 0; i < od.Waterlines.Count; i++) order.Add(i);
+            order.Sort((p, q) => od.Waterlines[p].CompareTo(od.Waterlines[q]));
+            var wlPos = new List<double>();
+            foreach (int i in order) wlPos.Add(od.Waterlines[i]);
+            foreach (double z in wlPos)
             {
-                b.Line(LinesGrid, x, zMin, x, zMax);
-                b.Line(LinesGrid, x, yHB, x, yHB + halfBeam);
+                b.Line(LinesGrid, xMin, z, xMax, z);
+                b.Line(LinesGrid, bodyL, z + dyBody, bodyR, z + dyBody);
             }
-            foreach (double x in order)
+            foreach (int k in ThinIndexes(wlPos, cyH * 1.05))
+            {
+                double z = wlPos[k];
+                string t = OffsetTableFactory.Head(wlM[order[k]]) + " W.L.";
+                b.Text(LinesLabel, xMin - 0.4 * tH, z, cyH, t, 2);              // 왼쪽
+                b.Text(LinesLabel, xMax + 0.4 * tH, z, cyH, t, 3);              // 오른쪽
+                b.Text(LinesLabel, bodyL - 0.4 * tH, z + dyBody, cyH, t, 2);    // Body plan 왼쪽
+                b.Text(LinesLabel, bodyR + 0.4 * tH, z + dyBody, cyH, t, 3);    // Body plan 오른쪽
+            }
+
+            // ---- 버톡: 격자 (Half-breadth, Body plan) + 시안 라벨 (좌/우) ----
+            var bo = new List<int>();
+            for (int i = 0; i < od.Buttocks.Count; i++) if (od.Buttocks[i] > 1e-9) bo.Add(i);
+            bo.Sort((p, q) => od.Buttocks[p].CompareTo(od.Buttocks[q]));
+            var btPos = new List<double>();
+            foreach (int i in bo) btPos.Add(od.Buttocks[i]);
+            foreach (double yb in btPos)
+            {
+                b.Line(LinesGrid, xMin, yHB + yb, xMax, yHB + yb);
+                b.Line(LinesGrid, cxBody + yb, bodyBase, cxBody + yb, bodyTop);
+                b.Line(LinesGrid, cxBody - yb, bodyBase, cxBody - yb, bodyTop);
+            }
+            foreach (int k in ThinIndexes(btPos, cyH * 1.05))
+            {
+                double yb = btPos[k];
+                string t = OffsetTableFactory.Head(btM[bo[k]]) + " B.T.";
+                b.Text(LinesLabel, xMin - 0.4 * tH, yHB + yb, cyH, t, 2);
+                b.Text(LinesLabel, xMax + 0.4 * tH, yHB + yb, cyH, t, 3);
+            }
+            b.Text(LinesLabel, xMin - 0.4 * tH, yHB, cyH, "C.L.", 2);
+            b.Text(LinesLabel, xMax + 0.4 * tH, yHB, cyH, "C.L.", 3);
+
+            // ---- 스테이션선 + 번호 (두 평면 사이, 번호 자리에서 선을 끊음) ----
+            var sorted = new List<double>(od.StationX);
+            sorted.Sort();
+            var rowEnd = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
+            double labelY0 = zLow - 0.020 * u;
+            foreach (double x in sorted)
             {
                 string label = numbered ? num.Label(x) : x.ToString(fmt, Inv);
-                double wLabel = (label.Length * 0.85 + 0.6) * lblH;
+                double wLabel = (label.Length * 0.9 + 0.6) * tH;
                 int rowIdx = -1;
                 for (int r = 0; r < rowEnd.Length; r++)
                     if (x - wLabel / 2.0 >= rowEnd[r]) { rowIdx = r; break; }
-                if (rowIdx < 0) continue;                                    // 자리가 없으면 생략
-                rowEnd[rowIdx] = x + wLabel / 2.0;
-                b.Text(LayerText, x, zMin - lblH * (1.6 + 1.5 * rowIdx), lblH, label, 1);
-            }
-
-            // ---- AP / FP ----
-            if (numbered)
-            {
-                b.Line(LinesRef, num.ApX, zMin, num.ApX, zMax);
-                b.Line(LinesRef, num.FpX, zMin, num.FpX, zMax);
-                b.Line(LinesRef, num.ApX, yHB, num.ApX, yHB + halfBeam);
-                b.Line(LinesRef, num.FpX, yHB, num.FpX, yHB + halfBeam);
-                b.Text(LayerText, num.ApX, zMax + tH * 1.2, lblH, "AP", 1);
-                b.Text(LayerText, num.FpX, zMax + tH * 1.2, lblH, "FP", 1);
-            }
-
-            // ---- 워터라인 격자 (Sheer, Body plan) + 라벨 (너무 가까운 것은 생략) ----
-            var wl = new List<double>(waterlines);
-            wl.Sort();
-            foreach (double z in wl)
-            {
-                b.Line(LinesGrid, xMin, z, xMax, z);
-                b.Line(LinesGrid, cxBody - halfBeam, z + dyBody, cxBody + halfBeam, z + dyBody);
-            }
-            foreach (int i in ThinIndexes(wl, lblH * 1.3))
-            {
-                double z = wl[i];
-                b.Text(LayerText, xMin - tH * 0.5, z, lblH, z.ToString(fmt, Inv), 2);
-                b.Text(LayerText, cxBody + halfBeam + tH * 0.5, z + dyBody, lblH, z.ToString(fmt, Inv), 3);
-            }
-
-            // ---- 버톡 격자 (Half-breadth, Body plan) + 라벨 ----
-            if (buttocks != null)
-            {
-                var bt = new List<double>(buttocks);
-                bt.Sort();
-                foreach (double yb in bt)
+                if (rowIdx < 0)
                 {
-                    b.Line(LinesGrid, xMin, yHB + yb, xMax, yHB + yb);
-                    b.Line(LinesGrid, cxBody + yb, bodyBase, cxBody + yb, bodyTop);
-                    b.Line(LinesGrid, cxBody - yb, bodyBase, cxBody - yb, bodyTop);
+                    b.Line(LinesGrid, x, zMax, x, lineBottom);                   // 번호를 못 쓰면 선은 이어서
                 }
-                foreach (int i in ThinIndexes(bt, lblH * 1.3))
-                    b.Text(LayerText, xMin - tH * 0.5, yHB + bt[i], lblH, bt[i].ToString(fmt, Inv), 2);
-                // Body plan 아래 라벨은 글자 폭 기준으로 솎음
-                double wBt = lblH * 5.5;
-                foreach (int i in ThinIndexes(bt, wBt))
+                else
                 {
-                    b.Text(LayerText, cxBody + bt[i], bodyBase - lblH * 1.5, lblH, bt[i].ToString(fmt, Inv), 1);
-                    b.Text(LayerText, cxBody - bt[i], bodyBase - lblH * 1.5, lblH, bt[i].ToString(fmt, Inv), 1);
+                    rowEnd[rowIdx] = x + wLabel / 2.0;
+                    double ly = labelY0 - rowIdx * 1.6 * tH;
+                    b.Text(LayerText, x, ly, tH, label, 1);
+                    b.Line(LinesGrid, x, zMax, x, ly + 0.85 * tH);
+                    b.Line(LinesGrid, x, ly - 0.85 * tH, x, lineBottom);
                 }
+                SmallBox(b, LayerText, x, lineBottom - 0.004 * u, 0.0035 * u, 0.0035 * u);   // 아래 끝 흰 사각형
             }
 
             // ---- Sheer plan: 프로파일 (y=0 단면), 없으면 단면 최저점으로 바닥선 대체 ----
             bool profileDrawn = false;
             foreach (var pts in CurveUtil.Prepare(d.Profile, ySign, d.Tol, false))
             {
-                var pl = new List<Point2d>();
-                foreach (var p in pts) pl.Add(new Point2d(p.X, p.Z));
+                var pl = new List<P2>();
+                foreach (var p in pts) pl.Add(new P2(p.X, p.Z));
                 b.AddPolyline(LinesProfile, pl);
                 profileDrawn = true;
             }
             if (!profileDrawn && d.Outline != null && d.Outline.Count >= 2)
             {
-                var keel = new List<Point2d>();
-                foreach (var o in d.Outline) keel.Add(new Point2d(o.X, o.ZBot));
+                var keel = new List<P2>();
+                foreach (var o in d.Outline) keel.Add(new P2(o.X, o.ZBot));
                 b.AddPolyline(LinesProfile, keel);
             }
 
             // ---- 갑판선(Sheer line): Sheer plan + Half-breadth plan ----
             if (d.DeckLine && d.Outline != null && d.Outline.Count >= 2)
             {
-                var sheer = new List<Point2d>();
-                var deckEdge = new List<Point2d>();
+                var sheer = new List<P2>();
+                var deckEdge = new List<P2>();
                 foreach (var o in d.Outline)
                 {
-                    sheer.Add(new Point2d(o.X, o.ZTop));
-                    deckEdge.Add(new Point2d(o.X, yHB + o.YTop));
+                    sheer.Add(new P2(o.X, o.ZTop));
+                    deckEdge.Add(new P2(o.X, yHB + o.YTop));
                 }
                 b.AddPolyline(LinesDeck, sheer);
                 b.AddPolyline(LinesDeck, deckEdge);
@@ -1434,8 +1336,8 @@ namespace OffsetGenPlugin
                 foreach (var bs in d.Buttocks)
                     foreach (var pts in bs.Lines)
                     {
-                        var pl = new List<Point2d>();
-                        foreach (var p in pts) pl.Add(new Point2d(p.X, p.Z));
+                        var pl = new List<P2>();
+                        foreach (var p in pts) pl.Add(new P2(p.X, p.Z));
                         b.AddPolyline(LinesButtock, pl);
                     }
 
@@ -1443,24 +1345,52 @@ namespace OffsetGenPlugin
             foreach (var ws in d.Waterlines)
                 foreach (var pts in CurveUtil.Prepare(ws.Curves, ySign, d.Tol, true))
                 {
-                    var pl = new List<Point2d>();
-                    foreach (var p in pts) pl.Add(new Point2d(p.X, yHB + p.Y * ySign));
+                    var pl = new List<P2>();
+                    foreach (var p in pts) pl.Add(new P2(p.X, yHB + p.Y * ySign));
                     b.AddPolyline(LinesWaterline, pl);
                 }
 
-            // ---- Body plan: 스테이션 단면 (선수 쪽은 오른쪽, 선미 쪽은 왼쪽) ----
+            // ---- Body plan: 스테이션 단면. midship 기준으로 선미(왼쪽)/선수(오른쪽), midship 은 양쪽 모두 ----
             foreach (var ss in d.Stations)
             {
-                double sgn = ss.X >= xMid ? 1.0 : -1.0;
+                bool aft = ss.X <= midX + eps, fwd = ss.X >= midX - eps;
                 foreach (var pts in CurveUtil.Prepare(ss.Curves, ySign, d.Tol, true))
                 {
-                    var pl = new List<Point2d>();
-                    foreach (var p in pts) pl.Add(new Point2d(cxBody + sgn * p.Y * ySign, p.Z + dyBody));
-                    b.AddPolyline(LinesStation, pl);
+                    if (aft)
+                    {
+                        var pl = new List<P2>();
+                        foreach (var p in pts) pl.Add(new P2(cxBody - p.Y * ySign, p.Z + dyBody));
+                        b.AddPolyline(LinesStation, pl);
+                    }
+                    if (fwd)
+                    {
+                        var pl = new List<P2>();
+                        foreach (var p in pts) pl.Add(new P2(cxBody + p.Y * ySign, p.Z + dyBody));
+                        b.AddPolyline(LinesStation, pl);
+                    }
                 }
             }
 
-            return yHB;
+            // ---- 탄젠트 점 (빨강): 스테이션마다 Sheer / Half-breadth / Body plan ----
+            double dashW = 0.006 * u, dashH = 0.0016 * u, dot = 0.003 * u;
+            for (int s = 0; s < od.StationX.Count; s++)
+            {
+                double x = od.StationX[s];
+                double? bt = od.BottomTangent[s], st = od.SideTangent[s], sy = od.SideY[s];
+                bool aft = x <= midX + eps, fwd = x >= midX - eps;
+                if (st.HasValue) SmallBox(b, LinesMark, x, st.Value, dashW, dashH);                 // Sheer plan: 측면 탄젠트 높이
+                if (bt.HasValue) SmallBox(b, LinesMark, x, yHB + bt.Value, dashW, dashH);           // Half-breadth: 바닥 탄젠트 반폭
+                if (sy.HasValue) SmallBox(b, LinesMark, x, yHB + sy.Value, dashW, dashH);           // Half-breadth: 측면 탄젠트 반폭
+                foreach (int sg in new[] { -1, 1 })
+                {
+                    if ((sg < 0 && !aft) || (sg > 0 && !fwd)) continue;
+                    if (bt.HasValue) SmallBox(b, LinesMark, cxBody + sg * bt.Value, bodyBase, dot, dot);
+                    if (sy.HasValue && st.HasValue) SmallBox(b, LinesMark, cxBody + sg * sy.Value, st.Value + dyBody, dot, dot);
+                }
+            }
+
+            // ---- Body plan 제목 (아래 가운데, 시안 밑줄) ----
+            UnderlinedTitle(b, cxBody, bodyBase - 0.016 * u, tH * 1.1, "BODY PLAN");
         }
     }
 
@@ -1468,13 +1398,13 @@ namespace OffsetGenPlugin
     // 명령어: OffsetGen
     // ---------------------------------------------------------------
     [System.Runtime.InteropServices.Guid("c7a21d5e-48b3-4f96-a0d2-3e5b9c8f1a47")]
-    public class OffsetGenCommand : Command
+    public class JPOffsetsCommand : Command
     {
         const string StationLayerName = "OffsetGen_Station";
         const string WaterlineLayerName = "OffsetGen_Waterline";
         const string ButtockLayerName = "OffsetGen_Buttock";
 
-        public override string EnglishName { get { return "OffsetGen2"; } }
+        public override string EnglishName { get { return "JPOffsets"; } }
 
         // RhinoApp.WriteLine 은 인자 개수별 오버로드가 제한적이므로 항상 하나의 문자열로 만들어서 출력
         static void Log(string format, params object[] args)
@@ -1485,7 +1415,7 @@ namespace OffsetGenPlugin
 
         protected override Result RunCommand(RhinoDoc doc, RunMode mode)
         {
-            Log("OffsetGen2 {0} - made by {1}", PlugInInfo.Version, PlugInInfo.Author);
+            Log("JPOffsets {0} - made by {1}", PlugInInfo.Version, PlugInInfo.Author);
 
             // 1) 선체 선택 (서피스 / 폴리서피스, 여러 개 가능)
             var go = new GetObject();
@@ -1510,7 +1440,7 @@ namespace OffsetGenPlugin
             }
 
             // 2) 입력 창 (바운딩 박스로 기본값 채움)
-            var dlg = new OffsetGenDialog(doc.ModelUnitSystem.ToString());
+            var dlg = new OffsetGenDialog(doc.ModelUnitSystem.ToString(), bbox);
             if (dlg.ShowDialog() != DialogResult.OK) return Result.Cancel;
 
             // 3) 저장 경로(확장자 제외): 3dm과 같은 폴더
@@ -1568,8 +1498,8 @@ namespace OffsetGenPlugin
                     od.Bt[s, k] = CrossZ(sections, dlg.Buttocks[k] * ySign, tol);
                 od.Center[s] = CrossZ(sections, 0.0, tol);
 
-                // BOTTOM TANGENT LINE: 단면이 기선(z = 모델 최저점)과 만나는 평탄부 끝의 반폭
-                var flat = CrossY(sections, bbox.Min.Z, ySign, tol);
+                // BOTTOM TANGENT LINE: 단면이 기선(z = 0 고정)과 만나는 평탄부 끝의 반폭
+                var flat = CrossY(sections, 0.0, ySign, tol);
                 if (flat.Count > 0 && flat[flat.Count - 1] > tol * 10.0) od.BottomTangent[s] = flat[flat.Count - 1];
 
                 // DECK SIDE LINE: 갑판 가장자리(단면 최상단)의 반폭, SIDE TANGENT LINE: 현측이 이 단면의 최대 반폭에 닿는 높이
@@ -1587,7 +1517,7 @@ namespace OffsetGenPlugin
                     if (yMax > tol * 10.0)
                     {
                         var zz = CrossZ(sections, (yMax - tol) * ySign, tol);
-                        if (zz.Count > 0) od.SideTangent[s] = zz[0];
+                        if (zz.Count > 0) { od.SideTangent[s] = zz[0]; od.SideY[s] = yMax; }
                     }
                 }
             }
@@ -1777,6 +1707,7 @@ namespace OffsetGenPlugin
                             ScaleText = dlg.ScaleText,
                             UnitName = unitName,
                             DepthM = dlg.DepthM,
+                            UpperDepthM = dlg.UpperDepthM,
                             DraftM = dlg.DraftM
                         };
                         lines = ScaleLines(lines, sc);
@@ -1871,6 +1802,7 @@ namespace OffsetGenPlugin
             r.ScaleText = d.ScaleText;
             r.UnitName = d.UnitName;
             r.DepthM = d.DepthM;
+            r.UpperDepthM = d.UpperDepthM;
             r.DraftM = d.DraftM;
             return r;
         }

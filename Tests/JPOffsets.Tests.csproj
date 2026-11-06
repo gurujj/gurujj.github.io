@@ -1,22 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 버톡 내삽(AdaptiveSampler) 콘솔 시험. 라이노 없이 실행: 빌드 후 OffsetGen.Tests.exe 실행, 종료 코드 0 = 통과 -->
 <Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{D1F3A6B2-5C84-4E7A-B93D-27A8E4C06F15}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>OffsetGenPlugin</RootNamespace>
-    <AssemblyName>OffsetGen2</AssemblyName>
+    <ProjectGuid>{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>JPOffsetsTests</RootNamespace>
+    <AssemblyName>JPOffsets.Tests</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <LangVersion>6</LangVersion>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- Rhino 8 설치 폴더가 다르면 빌드 시 /p:RhinoDir="..." 로 지정 (오프라인, NuGet 불필요) -->
-    <RhinoDir Condition=" '$(RhinoDir)' == '' ">C:\Program Files\Rhino 8\System</RhinoDir>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -34,24 +29,18 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="RhinoCommon">
-      <HintPath>$(RhinoDir)\RhinoCommon.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AdaptiveSampler.cs" />
-    <Compile Include="ButtockTracer.cs" />
-    <Compile Include="OffsetGen2.cs" />
-    <Compile Include="OffsetTables.cs" />
-    <Compile Include="PolyTools.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="AdaptiveSamplerTests.cs" />
+    <Compile Include="PolyToolsTests.cs" />
+    <Compile Include="StationNumberingTests.cs" />
+    <Compile Include="OffsetTablesTests.cs" />
+    <Compile Include="..\JPOffsets\PolyTools.cs"><Link>PolyTools.cs</Link></Compile>
+    <Compile Include="..\JPOffsets\AdaptiveSampler.cs"><Link>AdaptiveSampler.cs</Link></Compile>
+    <Compile Include="..\JPOffsets\StationNumbering.cs"><Link>StationNumbering.cs</Link></Compile>
+    <Compile Include="..\JPOffsets\DxfBuilder.cs"><Link>DxfBuilder.cs</Link></Compile>
+    <Compile Include="..\JPOffsets\OffsetTables.cs"><Link>OffsetTables.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- 빌드 후 OffsetGen2.dll 을 OffsetGen2.rhp 로 복사 (라이노에서 .rhp 를 끌어다 놓거나 PlugInManager 로 설치) -->
-  <Target Name="AfterBuild">
-    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(TargetDir)$(TargetName).rhp" />
-  </Target>
 </Project>

@@ -3,8 +3,11 @@ public static class Program
 {
     public static int Main()
     {
-        int a = AdaptiveSamplerTests.Run();
-        int b = PolyToolsTests.Run();
-        return (a == 0 && b == 0) ? 0 : 1;
+        int r = 0;
+        r |= AdaptiveSamplerTests.Run();
+        r |= PolyToolsTests.Run();
+        r |= StationNumberingTests.Run();
+        r |= OffsetTablesTests.Run();
+        return r == 0 ? 0 : 1;
     }
 }

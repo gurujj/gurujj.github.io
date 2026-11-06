@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
 VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OffsetGen2", "OffsetGen2\OffsetGen2.csproj", "{D1F3A6B2-5C84-4E7A-B93D-27A8E4C06F15}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JPOffsets", "JPOffsets\JPOffsets.csproj", "{D1F3A6B2-5C84-4E7A-B93D-27A8E4C06F15}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OffsetGen2.Tests", "Tests\OffsetGen.Tests.csproj", "{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JPOffsets.Tests", "Tests\JPOffsets.Tests.csproj", "{2C6E9B40-71D3-4A85-8E0F-5B3A9D14C7E2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

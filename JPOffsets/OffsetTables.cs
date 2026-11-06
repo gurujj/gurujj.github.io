@@ -25,6 +25,7 @@ namespace OffsetGenPlugin
         public double?[] BottomTangent;   // [스테이션] 바닥 평탄부 끝의 반폭
         public double?[] DeckSide;        // [스테이션] 갑판 현측 가장자리의 반폭
         public double?[] SideTangent;     // [스테이션] 현측이 최대 반폭에 닿는 높이
+        public double?[] SideY;           // [스테이션] 그 지점의 반폭 (= 그 스테이션의 최대 반폭), 탄젠트 점 표시용
 
         public OffsetData(int nSta, int nWl, int nBt)
         {
@@ -34,6 +35,7 @@ namespace OffsetGenPlugin
             BottomTangent = new double?[nSta];
             DeckSide = new double?[nSta];
             SideTangent = new double?[nSta];
+            SideY = new double?[nSta];
         }
 
         // 값(길이)만 배율 곱한 복사본. 머리글용 미터 값은 그대로.
@@ -54,6 +56,7 @@ namespace OffsetGenPlugin
                 r.BottomTangent[s] = BottomTangent[s].HasValue ? BottomTangent[s] * sc : null;
                 r.DeckSide[s] = DeckSide[s].HasValue ? DeckSide[s] * sc : null;
                 r.SideTangent[s] = SideTangent[s].HasValue ? SideTangent[s] * sc : null;
+                r.SideY[s] = SideY[s].HasValue ? SideY[s] * sc : null;
             }
             return r;
         }
@@ -85,6 +88,7 @@ namespace OffsetGenPlugin
 
         const double CharW = 0.9;     // 글자 폭 / 글자 높이 (여유 포함)
         const double HeadLine = 1.35, RowLine = 1.3;
+        const double TitleUnits = 2.6;   // 제목 행 높이 (표 안, 박스로 감쌈)
 
         double[] ColUnits()
         {
@@ -117,7 +121,7 @@ namespace OffsetGenPlugin
 
         // 글자 높이 1 기준 크기 (실제 크기 = 값 x 글자 높이)
         public double UnitsWidth() { double s = 0; foreach (double w in ColUnits()) s += w; return s; }
-        public double UnitsHeight() { double s = HeaderUnits(); foreach (var r in Rows) s += RowUnits(r); return s; }
+        public double UnitsHeight() { double s = TitleUnits + HeaderUnits(); foreach (var r in Rows) s += RowUnits(r); return s; }
 
         // 좌상단 (ox, oy), 아래로 그림. th = 글자 높이.
         // targetW / targetH > 0 이고 자연 크기보다 크면 열 폭 / 행 높이를 비율로 늘려 그 크기에 맞춤 (글자 크기는 그대로)
@@ -132,28 +136,32 @@ namespace OffsetGenPlugin
             for (int c = 0; c < nc; c++) cw[c] = cu[c] * th * fw;
             double totalW = natW * fw;
 
+            double titleH = TitleUnits * th;
             double hh = HeaderUnits() * th;
             double rowsNat = 0; foreach (var r in Rows) rowsNat += RowUnits(r) * th;
-            double fr = (targetH > hh + rowsNat) ? (targetH - hh) / rowsNat : 1.0;
+            double fr = (targetH > titleH + hh + rowsNat) ? (targetH - titleH - hh) / rowsNat : 1.0;
 
-            // 행 위치
+            // 행 위치: [0] 표 윗선, [1] 제목 행 아래, [2] 머리글 아래, 이후 각 행 아래
             var ys = new List<double>();
             double y = oy;
             ys.Add(y);
+            y -= titleH; ys.Add(y);
             y -= hh; ys.Add(y);
             foreach (var r in Rows) { y -= RowUnits(r) * th * fr; ys.Add(y); }
             double totalH = oy - y;
 
-            // 제목 / 단위
-            b.Text(layerText, ox + totalW / 2.0, oy + th * 2.4, th * 1.5, Title, 1);
-            if (!string.IsNullOrEmpty(UnitText)) b.Text(layerText, ox + totalW, oy + th * 1.0, th * 1.0, UnitText, 2);
+            // 제목은 표 안 맨 윗 행 (박스), 단위는 표 오른쪽 위 바깥
+            b.Text(layerText, ox + totalW / 2.0, oy - titleH / 2.0, th * 1.3, Title, 1);
+            if (!string.IsNullOrEmpty(UnitText)) b.Text(layerText, ox + totalW, oy + th * 1.2, th, UnitText, 2);
 
-            // 선
+            // 가로선 (제목 행 윗선/아랫선 포함 전체)
             foreach (double yy in ys) b.Line(layerGrid, ox, yy, ox + totalW, yy);
+            // 세로선: 바깥 좌/우는 전체 높이, 안쪽 열 구분선은 제목 행 아래부터
             double x = ox;
             for (int c = 0; c <= nc; c++)
             {
-                b.Line(layerGrid, x, oy, x, oy - totalH);
+                bool outer = (c == 0 || c == nc);
+                b.Line(layerGrid, x, outer ? oy : oy - titleH, x, oy - totalH);
                 if (c < nc) x += cw[c];
             }
 
@@ -162,9 +170,10 @@ namespace OffsetGenPlugin
             for (int c = 0; c < nc; c++)
             {
                 var lines = Headers[c];
+                double hTop = ys[1];
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    double ty = oy - hh / 2.0 + (lines.Length - 1) * 0.5 * HeadLine * th - i * HeadLine * th;
+                    double ty = hTop - hh / 2.0 + (lines.Length - 1) * 0.5 * HeadLine * th - i * HeadLine * th;
                     b.Text(layerText, x + cw[c] / 2.0, ty, th, lines[i], 1);
                 }
                 x += cw[c];
@@ -173,7 +182,7 @@ namespace OffsetGenPlugin
             // 칸
             for (int r = 0; r < Rows.Count; r++)
             {
-                double rTop = ys[r + 1], rBot = ys[r + 2];
+                double rTop = ys[r + 2], rBot = ys[r + 3];
                 double mid = (rTop + rBot) / 2.0;
                 x = ox;
                 for (int c = 0; c < nc; c++)
@@ -214,7 +223,7 @@ namespace OffsetGenPlugin
             return new[] { v.Value.ToString(fmt, Inv) };
         }
 
-        static string Head(double v) { return v.ToString("0.0##", Inv); }
+        public static string Head(double v) { return v.ToString("0.0##", Inv); }
 
         // HEIGHT ABOVE CENTER LINE: 중심선에서의 거리 (반폭)
         public static OffsetTableView CenterLineTable(OffsetData d, List<string> rowLabels, string fmt, string unitName)

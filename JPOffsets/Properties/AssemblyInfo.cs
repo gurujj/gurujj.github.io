@@ -1,14 +1,14 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("OffsetGen2")]
-[assembly: AssemblyDescription("Ship lines offset table + lines plan (CSV/DXF) generator (v1.1: exact buttock tracing for bulbous bows)")]
+[assembly: AssemblyTitle("JPOffsets")]
+[assembly: AssemblyDescription("Ship lines offset table + lines plan (CSV/DXF) generator (v1.2: exact buttock tracing for bulbous bows)")]
 [assembly: AssemblyCompany("Jejun Park, Ph. D.")]
-[assembly: AssemblyProduct("OffsetGen2")]
+[assembly: AssemblyProduct("JPOffsets")]
 [assembly: AssemblyCopyright("made by Jejun Park, Ph. D.")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
-[assembly: AssemblyInformationalVersion("1.1.0-alpha.4")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyInformationalVersion("1.2.0-alpha.1")]
 [assembly: ComVisible(false)]
 
 // 플러그인 GUID (명령 GUID와 다름)

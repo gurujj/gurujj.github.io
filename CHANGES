@@ -1,5 +1,36 @@
 Made by Jejun Park, Ph. D.
 
+JPOffsets 1.2.0-alpha.1  (OffsetGen2 1.1.0 에서 이름 변경: 명령어 JPOffsets, 플러그인 JPOffsets.rhp, 솔루션 JPOffsets.sln)
+
+[도면을 참고 도면(사진)과 같은 형식으로 변경]
+- 색: 격자 초록, 곡선(스테이션/수선/버톡) 노랑, 프로파일/갑판선 자홍, 라벨 시안, 중심선/기선/스테이션 번호 흰색, 탄젠트 점 빨강
+- 정면도(Body plan): 격자 상자 바깥 양옆에 시안 W.L. 라벨, 상자 안 제목/AFT/FWD/CL 글자 삭제, 아래 가운데에 시안 밑줄 제목,
+  선수 쪽(오른쪽) / 선미 쪽(왼쪽)을 midship(AP~FP 중앙, 스테이션 10) 기준으로 나누고 midship 은 양쪽에 모두 그림
+- 선도 좌/우 끝에 "0.5 W.L." / "1.0 B.T." 시안 라벨 (모든 선에, 가까우면 생략), 스테이션선은 번호 자리만 끊고 위에서 아래까지 이어지며 끝에 흰 사각형
+- 탄젠트 점(빨강): 스테이션마다 Sheer plan(측면 탄젠트 높이), Half-breadth plan(바닥/측면 탄젠트 반폭), Body plan 에 표시
+- 오프셋 표 제목을 표 안 맨 위 행(박스)으로 감쌈, 단위(Unit : mm)는 오른쪽 위
+- 제원(PRINCIPAL PARTICULARS): 도면 하부 중앙, 초록 큰 글씨, 항목 = LENGTH O.A / LENGTH B.P / BREADTH / DEPTH TO MAIN DK / DEPTH TO UPPER DK / DRAFT DESIGN
+- 개정란(REVISIONS): 오른쪽 위 모서리에 붙임. ZONE ALL, REV -, DESCRIPTION INITIAL ISSUE, DATE = 현재 날짜(자홍), APPROVED = 빈칸
+- 표제란: 오른쪽 아래 모서리, 제목(Lines & Offset Plan)만. 그 위는 다른 정보용 빈 공간
+- 기선은 z = 0 고정 (BOTTOM TANGENT 와 높이 표 기준)
+
+[입력 창]
+- 창 크기 확대(600 x 780), 맑은 고딕, DPI 배율 -> 글자 잘림 해결
+- "AP x / FP x" -> "A.P. 위치 / F.P. 위치" (길이 방향 x 좌표 안내 문구)
+- 스테이션 번호 원점 라디오 버튼: FP 원점(FP = 0, FP -> AP 로 번호 증가, 기본) / AP 원점(AP = 0, AP -> FP 로 번호 증가)
+- 선체를 선택하면 초기값을 선체 치수로 채움: A.P./F.P. = x 최소/최대, 수선 = 1 m 간격으로 최고 높이까지(+0.5 m),
+  버톡 = 2 m 부터 1 m 간격으로 최대 반폭까지(+0.5, 1, 1.5 m). 값은 모델 단위로 환산
+- 제원 입력: DEPTH TO MAIN DK, DEPTH TO UPPER DK, DRAFT DESIGN (m, 비우면 도면에 쓰지 않음)
+
+[코드/시험]
+- 라이노 비의존 파일로 분리: StationNumbering.cs, DxfBuilder.cs, OffsetTables.cs, PolyTools.cs, AdaptiveSampler.cs
+- 콘솔 시험 추가: 스테이션 번호(FP/AP 원점, F.P./A.P. 표시), 표 구성(행/열, 복수 교점 쌓기, '-'/'0', CSV, DXF, 척도 변환) -> 전체 49개 통과
+- 제외/미확인: DXF 단위 헤더($INSUNITS)는 R12 형식에 없어 넣지 않음. Sheer/Half-breadth plan 제목 글자는 사진에서 확인되지 않아 넣지 않음.
+  라이노 실제 선체 실행은 미확인 (RhinoCommon 스텁으로 컴파일만 확인)
+
+--------------------------------------------------------------------------------
+(이전 기록: OffsetGen2)
+
 OffsetGen2 1.1.0-alpha.1  (기준: OffsetGen 1.0.0-alpha.5, 이전 버전은 Archive/OffsetGen-1.0.0-alpha.5 에 그대로 보관)
 
 [문제]
