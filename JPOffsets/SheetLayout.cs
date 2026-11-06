@@ -44,6 +44,7 @@ namespace OffsetGenPlugin
         public double Gap;                       // 세 블록 사이 마진
         public double BandBottom, BandTop;
         public double BodyBase, CxBody;          // Body plan 기선 y, 중심선 x
+        public double BodyScale = 1.0;           // Body plan 확대 배율 (위쪽 띠 높이에 맞춤, 1 이상)
         // 선도
         public RectD Hull;                       // Sheer + Half-breadth plan (라벨, 번호 포함)
         public double YHB, PlanGap, LineBottom;
@@ -60,21 +61,26 @@ namespace OffsetGenPlugin
 
             // ---- 위쪽 띠: 왼쪽 표 | Body plan | 오른쪽 표, 사이는 항상 Gap ----
             s.Gap = Math.Max(0.03 * u, 6.0 * tH);
-            double bodyOuterW = 2.0 * i.HalfBeam + 2.0 * (i.LabMargin + i.LabW);
-            double wTop = i.TableW1 + s.Gap + bodyOuterW + s.Gap + i.TableW2;
+            double hullH = i.ZMax - i.ZLow;
             double hullW = u + 2.0 * (i.LabMargin + i.LabW);
+
+            // 위쪽 띠 높이는 표(글자 크기 고정)가 정하고, Body plan 은 그 높이를 채우도록 확대 (최소 1배, 최대 3배)
+            double bodyPad = 12.0 * tH;                                  // 아래 제목 + 위 여백
+            double bandH = Math.Max(hullH + bodyPad, Math.Max(i.TableH1, i.TableH2));
+            s.BodyScale = Math.Max(1.0, Math.Min(3.0, (bandH - bodyPad) / hullH));
+            double bodyOuterW = 2.0 * i.HalfBeam * s.BodyScale + 2.0 * (i.LabMargin + i.LabW);
+            double wTop = i.TableW1 + s.Gap + bodyOuterW + s.Gap + i.TableW2;
             double contentW = Math.Max(wTop, hullW);
             double x0 = cx0 - wTop / 2.0;
 
-            double bodyNeed = (i.ZMax - i.ZLow) + 12.0 * tH;            // Body plan + 아래 제목 + 위 여백
-            double bandH = Math.Max(bodyNeed, Math.Max(i.TableH1, i.TableH2));
             s.BandBottom = i.ZMax + 12.0 * tH;                         // Sheer plan 위 빨간 라벨 줄 자리
             s.BandTop = s.BandBottom + bandH;
             s.Table1 = new RectD(x0, s.BandBottom, x0 + i.TableW1, s.BandTop);
             s.Body = new RectD(s.Table1.R + s.Gap, s.BandBottom, s.Table1.R + s.Gap + bodyOuterW, s.BandTop);
             s.Table2 = new RectD(s.Body.R + s.Gap, s.BandBottom, s.Body.R + s.Gap + i.TableW2, s.BandTop);
             s.CxBody = (s.Body.L + s.Body.R) / 2.0;
-            s.BodyBase = s.BandBottom + 5.5 * tH + (bandH - bodyNeed) / 2.0;
+            double bodyH = hullH * s.BodyScale;
+            s.BodyBase = s.BandBottom + 5.5 * tH + (bandH - bodyPad - bodyH) / 2.0;
 
             // ---- 선도 (Sheer plan 아래에 Half-breadth plan) ----
             s.PlanGap = 22.0 * tH;                                       // 스테이션 번호 + 빨간 라벨 두 줄씩 자리

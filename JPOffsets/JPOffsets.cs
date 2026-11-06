@@ -64,7 +64,7 @@ namespace OffsetGenPlugin
     {
         public const string Author = "Jejun Park, Ph. D.";
         public const string Credit = "made by Jejun Park, Ph. D.";
-        public const string Version = "1.2.0-alpha.3";
+        public const string Version = "1.2.0-alpha.4";
     }
 
     // ---------------------------------------------------------------
@@ -1039,7 +1039,7 @@ namespace OffsetGenPlugin
             SheetLayout L = SheetLayout.Compute(li);
 
             // ---------- 선도 ----------
-            DrawLines(b, lines, data, num, fmt, u, tH, cyH, labW, labMargin, zLow, L.BodyBase, L.CxBody, L.YHB, um);
+            DrawLines(b, lines, data, num, fmt, u, tH, cyH, labW, labMargin, zLow, L.BodyBase, L.CxBody, L.YHB, um, L.BodyScale);
 
             // ---------- 표 (세 블록의 위/아래 선을 맞춤, 표는 칸 높이에 맞춰 행 높이를 늘림) ----------
             t1.Draw(b, L.Table1.L, L.Table1.T, thTable, LayerGrid, LayerText, L.Table1.Width, L.Table1.Height);
@@ -1326,7 +1326,7 @@ namespace OffsetGenPlugin
         // -------------------- 선도 --------------------
         static void DrawLines(DxfBuilder b, LinesData d, OffsetData od, StationNumbering num, string fmt,
                               double u, double tH, double cyH, double labW, double labMargin, double zLow,
-                              double bodyBase, double cxBody, double yHB, double um)
+                              double bodyBase, double cxBody, double yHB, double um, double bodyK)
         {
             double xMin = d.Bbox.Min.X, xMax = d.Bbox.Max.X;
             double zMax = d.Bbox.Max.Z;
@@ -1334,9 +1334,10 @@ namespace OffsetGenPlugin
             double halfBeam = Math.Max(Math.Abs(d.Bbox.Min.Y), Math.Abs(d.Bbox.Max.Y));
             if (halfBeam < 1e-9) halfBeam = u * 0.1;
 
-            double dyBody = bodyBase - zLow;            // Body plan 의 z -> 도면 y 이동량
-            double bodyTop = zMax + dyBody;
-            double bodyL = cxBody - halfBeam, bodyR = cxBody + halfBeam;
+            // Body plan 은 위쪽 띠 높이에 맞춰 k 배 확대 (z -> 도면 y, 반폭 -> 도면 x 모두 k 배)
+            Func<double, double> by = z => bodyBase + (z - zLow) * bodyK;
+            double bodyTop = by(zMax);
+            double bodyL = cxBody - halfBeam * bodyK, bodyR = cxBody + halfBeam * bodyK;
             bool numbered = num != null && num.Valid;
             double midX = numbered ? (num.ApX + num.FpX) / 2.0 : (xMin + xMax) / 2.0;   // midship (스테이션 10)
             double eps = u * 1e-6;
@@ -1368,7 +1369,7 @@ namespace OffsetGenPlugin
             foreach (double z in wlPos)
             {
                 b.Line(LinesGrid, xMin, z, xMax, z);
-                b.Line(LinesGrid, bodyL, z + dyBody, bodyR, z + dyBody);
+                b.Line(LinesGrid, bodyL, by(z), bodyR, by(z));
             }
             foreach (int k in ThinIndexes(wlPos, cyH * 1.05))
             {
@@ -1376,8 +1377,8 @@ namespace OffsetGenPlugin
                 string t = OffsetTableFactory.Head(wlM[order[k]]) + " W.L.";
                 b.Text(LinesLabel, xMin - labMargin, z, cyH, t, 2);              // 왼쪽
                 b.Text(LinesLabel, xMax + labMargin, z, cyH, t, 3);              // 오른쪽
-                b.Text(LinesLabel, bodyL - labMargin, z + dyBody, cyH, t, 2);    // Body plan 왼쪽
-                b.Text(LinesLabel, bodyR + labMargin, z + dyBody, cyH, t, 3);    // Body plan 오른쪽
+                b.Text(LinesLabel, bodyL - labMargin, by(z), cyH, t, 2);    // Body plan 왼쪽
+                b.Text(LinesLabel, bodyR + labMargin, by(z), cyH, t, 3);    // Body plan 오른쪽
             }
 
             // ---- 버톡: 격자 (Half-breadth, Body plan) + 시안 라벨 (좌/우) ----
@@ -1389,8 +1390,8 @@ namespace OffsetGenPlugin
             foreach (double yb in btPos)
             {
                 b.Line(LinesGrid, xMin, yHB + yb, xMax, yHB + yb);
-                b.Line(LinesGrid, cxBody + yb, bodyBase, cxBody + yb, bodyTop);
-                b.Line(LinesGrid, cxBody - yb, bodyBase, cxBody - yb, bodyTop);
+                b.Line(LinesGrid, cxBody + yb * bodyK, bodyBase, cxBody + yb * bodyK, bodyTop);
+                b.Line(LinesGrid, cxBody - yb * bodyK, bodyBase, cxBody - yb * bodyK, bodyTop);
             }
             foreach (int k in ThinIndexes(btPos, cyH * 1.05))
             {
@@ -1502,13 +1503,13 @@ namespace OffsetGenPlugin
                     if (aft)
                     {
                         var pl = new List<P2>();
-                        foreach (var p in pts) pl.Add(new P2(cxBody - p.Y * ySign, p.Z + dyBody));
+                        foreach (var p in pts) pl.Add(new P2(cxBody - p.Y * ySign * bodyK, by(p.Z)));
                         b.AddPolyline(LinesStation, pl);
                     }
                     if (fwd)
                     {
                         var pl = new List<P2>();
-                        foreach (var p in pts) pl.Add(new P2(cxBody + p.Y * ySign, p.Z + dyBody));
+                        foreach (var p in pts) pl.Add(new P2(cxBody + p.Y * ySign * bodyK, by(p.Z)));
                         b.AddPolyline(LinesStation, pl);
                     }
                 }
@@ -1561,8 +1562,8 @@ namespace OffsetGenPlugin
                         if (p.Z > top.Y) top = new P2(p.Y * ySign, p.Z);
                 if (double.IsNegativeInfinity(top.Y)) continue;
                 string nm = numbered ? num.Label(ss.X) : ss.X.ToString(fmt, Inv);
-                if (aft) { leftTops.Add(new P2(cxBody - top.X, top.Y + dyBody)); leftNames.Add(nm); }
-                if (fwd) { rightTops.Add(new P2(cxBody + top.X, top.Y + dyBody)); rightNames.Add(nm); }
+                if (aft) { leftTops.Add(new P2(cxBody - top.X * bodyK, by(top.Y))); leftNames.Add(nm); }
+                if (fwd) { rightTops.Add(new P2(cxBody + top.X * bodyK, by(top.Y))); rightNames.Add(nm); }
             }
             PlaceTopLabels(b, leftTops, leftNames, hB);
             PlaceTopLabels(b, rightTops, rightNames, hB);
@@ -1576,7 +1577,8 @@ namespace OffsetGenPlugin
             LBracket(b, bodyR + labMargin, bodyBase, +1, labW, cyH);
 
             // ---- Body plan 제목 (아래 가운데, 시안 밑줄) ----
-            UnderlinedTitle(b, cxBody, bodyBase - 3.4 * tH, tH * 1.3, "BODY PLAN");
+            UnderlinedTitle(b, cxBody, bodyBase - 3.4 * tH, tH * 1.3,
+                            bodyK > 1.05 ? "BODY PLAN (x" + bodyK.ToString("0.0", Inv) + ")" : "BODY PLAN");   // 확대했으면 배율 표시
         }
     }
 

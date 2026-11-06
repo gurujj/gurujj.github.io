@@ -44,6 +44,14 @@ public static class SheetLayoutTests
             // 도면은 내용 크기에서 결정: 위쪽 띠가 선체보다 넓으면 테두리도 그만큼 넓어짐
             double top = s.Table2.R - s.Table1.L;
             Check(s.Frame.Width >= top && s.Frame.Width >= 220000, "frame is at least as wide as the widest block" + tag);
+            // Body plan 은 위쪽 띠 높이를 채우도록 확대 (1~3배), 상자 안에 들어옴
+            Check(s.BodyScale >= 1.0 && s.BodyScale <= 3.0 + 1e-9, "body scale within 1..3" + tag);
+            double bodyTop = s.BodyBase + (i.ZMax - i.ZLow) * s.BodyScale;
+            Check(s.BodyBase >= s.Body.B && bodyTop <= s.Body.T, "scaled body plan inside its box" + tag);
+            double halfW = i.HalfBeam * s.BodyScale;
+            Check(s.CxBody - halfW >= s.Body.L && s.CxBody + halfW <= s.Body.R, "scaled body plan width inside its box" + tag);
+            if (i.TableH1 > (i.ZMax - i.ZLow) + 12.0 * i.TH)
+                Check(s.BodyScale > 1.2, "body plan enlarged when tables are taller" + tag);
             // 선체 평면도는 테두리 가운데
             Check(Math.Abs((s.Hull.L + s.Hull.R) / 2.0 - (s.Frame.L + s.Frame.R) / 2.0) < 1e-6, "plans centered in frame" + tag);
         }
