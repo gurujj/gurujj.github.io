@@ -35,7 +35,7 @@ public static class AdaptiveSamplerTests
         return e;
     }
 
-    public static int Main()
+    public static int Run()
     {
         // 원본 방식: 200구간 고정 격자(선체 길이 200 가정 -> 간격 1.0)를 직선으로 이음.
         // 선수 끝(x=100)이 격자점 사이(99.6~100.6)에 놓이도록 시작점을 어긋나게 잡음

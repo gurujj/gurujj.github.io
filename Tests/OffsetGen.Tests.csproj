@@ -32,7 +32,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AdaptiveSamplerTests.cs" />
-    <Compile Include="..\OffsetGen\AdaptiveSampler.cs"><Link>AdaptiveSampler.cs</Link></Compile>
+    <Compile Include="PolyToolsTests.cs" />
+    <Compile Include="..\OffsetGen2\PolyTools.cs"><Link>PolyTools.cs</Link></Compile>
+    <Compile Include="..\OffsetGen2\AdaptiveSampler.cs"><Link>AdaptiveSampler.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
