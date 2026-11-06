@@ -1,3 +1,4 @@
 OffsetGen 1.0.0-alpha.1
 - 버톡 라인을 곡면-평면 교선으로 직접 계산 (벌브 급변 곡률 추종)
 - VS 2022 / .NET Framework 4.8 솔루션 추가 (빌드 후 OffsetGen.rhp 생성)
+- csproj LangVersion latest -> 6 (구형 C# 컴파일러 오류 수정)
