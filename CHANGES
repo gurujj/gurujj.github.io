@@ -22,6 +22,16 @@ OffsetGen2 1.1.0-alpha.1  (기준: OffsetGen 1.0.0-alpha.5, 이전 버전은 Arc
 - 명령어 OffsetGen2, 플러그인/명령 GUID 변경 -> 이전 OffsetGen 과 함께 설치해도 충돌 없음 (출력 OffsetGen2.rhp)
 - 스테이션 입력: "간격" 대신 "분할 수"(기본 20) 입력, 간격 = (FP-AP)/분할 수 로 계산. FP를 바꿔도 스테이션 위치와 DXF의 LPP(AP-FP)가 함께 바뀜
   (이전: 간격 10이 고정이라 FP를 바꿔도 스테이션이 200까지 나감). 끝 St.는 분할 수를 따라감
+- 선도 도면/표 형식 변경 (1.1.0-alpha.2): 스테이션 = 행, 수선/버톡 = 열
+  * 위쪽: [HEIGHT ABOVE CENTER LINE(반폭)] [Body plan] [HEIGHT ABOVE BASE LINE(높이)], 중간: Sheer plan, 그 아래: Half-breadth plan,
+    맨 아래: PRINCIPAL PARTICULARS(왼쪽) / 표제란(오른쪽). 표는 회전 없이, 글자 크기는 폭에 맞춰 자동 조정
+  * 반폭 표 열: STATION No. | BOTTOM TANGENT LINE | 0.5 W.L. ... | DECK SIDE LINE | STATION No.   (선체 없음 = '-')
+  * 높이 표 열: STATION No. | CENTER CONTOUR(y=0) | 0.5 B.T. ... | SIDE TANGENT LINE | STATION No.  (선체 없음 = '0')
+  * 한 칸에 교점이 여러 개면(벌브 등) 오름차순으로 세로로 쌓음 (이전의 "2번째/3번째 교점" 별도 표는 폐지). CSV 는 ; 로 구분
+  * 스테이션 번호: 입력 창에서 FP = 0 -> AP = 분할 수 (도면 방식, 기본) / AP = 0 -> FP 선택. AP, FP 위치는 "A.P." / "F.P." 로 표시
+  * 기본값: 수선 0.5, 1~23 / 버톡 0.5, 1, 1.5, 2~16 / 소수 자리 0 (쓰기 단위 mm). 형심 D, 설계 흘수 T 입력(선택) -> PRINCIPAL PARTICULARS
+  * 열 정의: BOTTOM TANGENT = 기선과 만나는 평탄부 끝의 반폭, SIDE TANGENT = 현측이 그 스테이션의 최대 반폭에 닿는 높이,
+    DECK SIDE = 갑판 가장자리의 반폭, CENTER CONTOUR = y=0 버톡 (라이노 모델에서 값이 안정적인지는 실행해 확인 필요)
 - 그 외(입력 창, 워터라인/스테이션, 단위 변환, 선도 DXF) 는 이전 버전과 동일
 - 새 파일: ButtockTracer.cs (Rhino), PolyTools.cs (라이노 비의존), Tests/PolyToolsTests.cs
 - VS 2015 / .NET Framework 4.8 / C# 6 클래식 프로젝트

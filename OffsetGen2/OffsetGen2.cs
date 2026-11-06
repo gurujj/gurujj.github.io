@@ -57,7 +57,7 @@ namespace OffsetGenPlugin
     {
         public const string Author = "Jejun Park, Ph. D.";
         public const string Credit = "made by Jejun Park, Ph. D.";
-        public const string Version = "1.1.0-alpha.1";
+        public const string Version = "1.1.0-alpha.2";
     }
 
     // ---------------------------------------------------------------
@@ -107,13 +107,33 @@ namespace OffsetGenPlugin
         public double ApX;
         public double FpX;
         public double Spacing = 1.0;   // 스테이션 1개의 간격 (x 길이 단위)
+        public bool FpOrigin = true;   // true: FP = 0, 번호가 선미(AP) 쪽으로 증가 (도면 방식) / false: AP = 0, 선수 쪽으로 증가
 
+        // 스테이션 번호 (소수 4자리 반올림). x 위치 -> 번호
+        public double Number(double x)
+        {
+            double n = FpOrigin ? (FpX - x) / Spacing : (x - ApX) / Spacing;
+            n = Math.Round(n, 4);
+            if (Math.Abs(n) < 1e-9) n = 0.0;
+            return n;
+        }
+
+        // 번호 -> x 위치
+        public double PositionOf(double no)
+        {
+            return FpOrigin ? FpX - no * Spacing : ApX + no * Spacing;
+        }
+
+        // 표시 문자열: AP, FP 위치는 "A.P." / "F.P.", 나머지는 번호
         public string Label(double x)
         {
             if (!Valid || Spacing <= 0) return "";
-            double n = (x - ApX) / Spacing;
-            n = Math.Round(n, 4);
-            if (Math.Abs(n) < 1e-9) n = 0.0;
+            double n = Number(x);
+            double div = (FpX - ApX) / Spacing;
+            bool atZero = Math.Abs(n) < 1e-9;
+            bool atEnd = Math.Abs(n - div) < 1e-6;
+            if (atZero) return FpOrigin ? "F.P." : "A.P.";
+            if (atEnd) return FpOrigin ? "A.P." : "F.P.";
             return n.ToString("0.##", CultureInfo.InvariantCulture);
         }
     }
@@ -131,6 +151,8 @@ namespace OffsetGenPlugin
         public string ShipName;
         public string ScaleText;
         public string UnitName;   // 출력 단위 ("m" 또는 "mm")
+        public double? DepthM;    // 주요 치수용 (미터), 비어 있으면 도면에 쓰지 않음
+        public double? DraftM;
     }
 
     // ---------------------------------------------------------------
@@ -180,7 +202,8 @@ namespace OffsetGenPlugin
         string lastDefaultTextH = "2500";
         string modelUnitLabel = "";
         CheckBox chkCsv, chkDxf, chkLines, chkDeck, chkButtock;
-        CheckBox chkShowSta, chkShowWl, chkShowBt, chkSmooth, chkExact;
+        CheckBox chkShowSta, chkShowWl, chkShowBt, chkSmooth, chkExact, chkFpOrigin;
+        TextBox txtDepth, txtDraft;
 
         public List<double> Stations = new List<double>();
         public List<double> Waterlines = new List<double>();
@@ -193,6 +216,9 @@ namespace OffsetGenPlugin
         public bool DeckLine = true;
         public bool SmoothButtocks = true;
         public bool ExactButtocks = true;
+        public bool FpOrigin = true;           // 스테이션 번호: FP = 0, 선미 쪽으로 증가
+        public double? DepthM;                 // 주요 치수 (미터)
+        public double? DraftM;
         public bool ShowStationCurves = true;
         public bool ShowWaterlineCurves = true;
         public bool ShowButtockCurves = true;
@@ -225,7 +251,7 @@ namespace OffsetGenPlugin
             // ===== 탭 1: 단면 정의 (입력값은 모두 모델 단위) =====
             int y = 6;
 
-            var gbSta = new GroupBox { Text = "스테이션 (AP 기준 번호, AP = 0)", Left = 6, Top = y, Width = 392, Height = 148 };
+            var gbSta = new GroupBox { Text = "스테이션 (AP~FP를 분할 수로 등분)", Left = 6, Top = y, Width = 392, Height = 172 };
             tabA.Controls.Add(gbSta);
             AddLabel("AP x", 12, 24, gbSta);
             txtAp = AddText("0", 44, 21, 70, gbSta);
@@ -237,8 +263,10 @@ namespace OffsetGenPlugin
             txtStaStartNo = AddText("0", 62, 51, 60, gbSta);
             AddLabel("끝 St.", 140, 54, gbSta);
             txtStaEndNo = AddText("20", 180, 51, 60, gbSta);
-            lblSpacing = new Label { Left = 12, Top = 82, AutoSize = true };
+            lblSpacing = new Label { Left = 12, Top = 78, AutoSize = true };
             gbSta.Controls.Add(lblSpacing);
+            chkFpOrigin = new CheckBox { Text = "번호: FP = 0 → AP = 분할 수 (도면 방식). 해제하면 AP = 0 → FP", Left = 12, Top = 96, Width = 372, Checked = true };
+            gbSta.Controls.Add(chkFpOrigin);
             txtAp.TextChanged += delegate { UpdateSpacingLabel(); };
             txtFp.TextChanged += delegate { UpdateSpacingLabel(); };
             txtStaDiv.TextChanged += delegate
@@ -249,28 +277,28 @@ namespace OffsetGenPlugin
                 UpdateSpacingLabel();
             };
             UpdateSpacingLabel();
-            AddLabel("추가 스테이션 번호 (쉼표 구분, 위 스테이션에 추가)", 12, 100, gbSta);
-            txtStaCustom = new HintTextBox { Hint = "예: -0.5, 0.5, 19.5, 20.5", Text = "-0.5, 0.5, 1.5, 18.5, 19.5", Left = 12, Top = 120, Width = 366 };
+            AddLabel("추가 스테이션 번호 (쉼표 구분, 위 스테이션에 추가)", 12, 124, gbSta);
+            txtStaCustom = new HintTextBox { Hint = "예: -0.5, 0.5, 19.5, 20.5", Text = "-0.5, 0.5, 1.5, 18.5, 19.5", Left = 12, Top = 144, Width = 366 };
             gbSta.Controls.Add(txtStaCustom);
-            y += 154;
+            y += 178;
 
             var gbWl = new GroupBox { Text = "워터라인 (z, 높이 방향)", Left = 6, Top = y, Width = 392, Height = 110 };
             tabA.Controls.Add(gbWl);
             AddLabel("시작", 12, 24, gbWl);
-            txtWlStart = AddText("0", 44, 21, 70, gbWl);
+            txtWlStart = AddText("1", 44, 21, 70, gbWl);
             AddLabel("끝", 124, 24, gbWl);
             txtWlEnd = AddText("23", 144, 21, 70, gbWl);
             AddLabel("간격", 226, 24, gbWl);
             txtWlStep = AddText("1", 260, 21, 70, gbWl);
             AddLabel("추가 값 (쉼표 구분, 위 범위에 추가)", 12, 54, gbWl);
-            txtWlExtra = new HintTextBox { Hint = "예: 0.4, 2.5", Text = "0.4", Left = 12, Top = 74, Width = 366 };
+            txtWlExtra = new HintTextBox { Hint = "예: 0.5, 2.5", Text = "0.5", Left = 12, Top = 74, Width = 366 };
             gbWl.Controls.Add(txtWlExtra);
             y += 116;
 
             var gbBt = new GroupBox { Text = "버톡 (y, 폭 방향, 중심선에서의 거리)", Left = 6, Top = y, Width = 392, Height = 110 };
             tabA.Controls.Add(gbBt);
             AddLabel("시작", 12, 24, gbBt);
-            txtBtStart = AddText("0", 44, 21, 70, gbBt);
+            txtBtStart = AddText("2", 44, 21, 70, gbBt);
             AddLabel("끝", 124, 24, gbBt);
             txtBtEnd = AddText("16", 144, 21, 70, gbBt);
             AddLabel("간격", 226, 24, gbBt);
@@ -278,12 +306,12 @@ namespace OffsetGenPlugin
             chkButtock = new CheckBox { Text = "사용", Left = 330, Top = 21, Width = 56, Checked = true };
             gbBt.Controls.Add(chkButtock);
             AddLabel("추가 값 (쉼표 구분, 위 범위에 추가)", 12, 54, gbBt);
-            txtBtExtra = new HintTextBox { Hint = "예: 0.5, 1.5", Left = 12, Top = 74, Width = 366 };
+            txtBtExtra = new HintTextBox { Hint = "예: 0.5, 1, 1.5", Text = "0.5, 1, 1.5", Left = 12, Top = 74, Width = 366 };
             gbBt.Controls.Add(txtBtExtra);
             y += 116;
 
             AddLabel("소수점 자리수", 12, y + 3, tabA);
-            numDecimals = AddNum(3, 0, 8, 110, y, 60, tabA);
+            numDecimals = AddNum(0, 0, 8, 110, y, 60, tabA);   // 쓰기 단위 mm 기본이므로 정수 (m로 바꾸면 3으로 자동 변경)
             AddLabel("입력값 단위 = 현재 단위 (탭 2에서 선택)", 190, y + 3, tabA);
 
             // ===== 탭 2: 출력 / 선도 =====
@@ -331,7 +359,7 @@ namespace OffsetGenPlugin
             UpdateFactorLabel();
             y += 144;
 
-            var gbLn = new GroupBox { Text = "선도 옵션", Left = 6, Top = y, Width = 392, Height = 128 };
+            var gbLn = new GroupBox { Text = "선도 옵션", Left = 6, Top = y, Width = 392, Height = 152 };
             tabB.Controls.Add(gbLn);
             chkDeck = new CheckBox { Text = "갑판선(Sheer line) / 갑판 가장자리 그리기", Left = 12, Top = 22, Width = 370, Checked = true };
             gbLn.Controls.Add(chkDeck);
@@ -343,6 +371,11 @@ namespace OffsetGenPlugin
             txtShip = AddText("", 48, 89, 150, gbLn);
             AddLabel("척도", 212, 92, gbLn);
             txtScale = AddText("1:100", 248, 89, 70, gbLn);
+            AddLabel("형심 D (m)", 12, 124, gbLn);
+            txtDepth = AddText("", 84, 121, 60, gbLn);
+            AddLabel("설계 흘수 T (m)", 160, 124, gbLn);
+            txtDraft = AddText("", 262, 121, 60, gbLn);
+            AddLabel("(비우면 주요 치수에 쓰지 않음)", 12, 142, gbLn);
 
             // ===== 버튼 =====
             var ok = new Button { Text = "생성", Left = 230, Top = 476, Width = 90 };
@@ -366,6 +399,10 @@ namespace OffsetGenPlugin
             string newDefault = N(2.5 / UnitMeters(cmbTo.SelectedItem.ToString()));
             if (txtTextH.Text.Trim() == lastDefaultTextH) txtTextH.Text = newDefault;
             lastDefaultTextH = newDefault;
+            // 소수 자리수: 기본값(mm 0자리 / 그 외 3자리)일 때만 쓰기 단위에 맞춰 바꿈
+            string to = cmbTo.SelectedItem.ToString();
+            if (numDecimals != null && (numDecimals.Value == 0 || numDecimals.Value == 3))
+                numDecimals.Value = to == "mm" ? 0 : 3;
             UpdateFactorLabel();
         }
 
@@ -469,7 +506,7 @@ namespace OffsetGenPlugin
             foreach (double no in numbers)
             {
                 if (!double.IsNaN(lastNo) && Math.Abs(no - lastNo) < 1e-6) continue;
-                Stations.Add(ap + no * spacing);
+                Stations.Add(chkFpOrigin.Checked ? fp - no * spacing : ap + no * spacing);
                 lastNo = no;
             }
 
@@ -519,6 +556,10 @@ namespace OffsetGenPlugin
             DeckLine = chkDeck.Checked;
             SmoothButtocks = chkSmooth.Checked;
             ExactButtocks = chkExact.Checked;
+            FpOrigin = chkFpOrigin.Checked;
+            double dv;
+            DepthM = double.TryParse(txtDepth.Text, NumberStyles.Float, Inv, out dv) && dv > 0 ? (double?)dv : null;
+            DraftM = double.TryParse(txtDraft.Text, NumberStyles.Float, Inv, out dv) && dv > 0 ? (double?)dv : null;
             ShipName = txtShip.Text;
             ScaleText = txtScale.Text;
             ShowStationCurves = chkShowSta.Checked;
@@ -974,7 +1015,9 @@ namespace OffsetGenPlugin
     }
 
     // ---------------------------------------------------------------
-    // DXF 도면 작성 (오프셋 표 + 선도 + 표제란)
+    // DXF 도면 작성 (선도 + 오프셋 표 + 주요 치수 / 표제란)
+    //   배치: 위 = [반폭 표] [Body plan] [높이 표], 중간 = Sheer plan, 그 아래 = Half-breadth plan,
+    //         맨 아래 = 주요 치수(왼쪽) / 표제란(오른쪽)
     // ---------------------------------------------------------------
     public static class DxfWriter
     {
@@ -989,16 +1032,20 @@ namespace OffsetGenPlugin
         const string LinesRef = "LINES_REF";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+        // 선도 배치 결과 (표/표제란 위치 계산용)
+        class Layout
+        {
+            public double XMin, XMax, BodyLeft, BodyRight, TableBottomY, LowY;
+        }
+
         // lines가 null이면 표만 그림
-        public static void Write(string path, List<double> stations, List<double> waterlines,
-                                 double?[,] wlTable, List<double> buttocks, double?[,] btTable,
-                                 string fmt, double textH, StationNumbering num, LinesData lines,
-                                 string unitName, List<double?[,]> btExtra = null)
+        public static void Write(string path, OffsetData data, string fmt, double textH,
+                                 StationNumbering num, LinesData lines, string unitName)
         {
             var b = new DxfBuilder();
-            b.AddLayer(LayerGrid, 7);
-            b.AddLayer(LayerText, 3);
-            b.AddLayer(LinesGrid, 8);
+            b.AddLayer(LayerGrid, 3);
+            b.AddLayer(LayerText, 7);
+            b.AddLayer(LinesGrid, 3);
             b.AddLayer(LinesStation, 5);
             b.AddLayer(LinesWaterline, 1);
             b.AddLayer(LinesButtock, 4);
@@ -1006,148 +1053,106 @@ namespace OffsetGenPlugin
             b.AddLayer(LinesDeck, 6);
             b.AddLayer(LinesRef, 30);
 
-            double ox = 0.0, oy = 0.0;
+            var rowLabels = new List<string>();
+            foreach (double x in data.StationX)
+                rowLabels.Add(num != null && num.Valid ? num.Label(x) : x.ToString(fmt, Inv));
+
+            var t1 = OffsetTableFactory.CenterLineTable(data, rowLabels, fmt, unitName);
+            var t2 = OffsetTableFactory.BaseLineTable(data, rowLabels, fmt, unitName);
+
             bool hasLines = lines != null && lines.Bbox.IsValid;
-            double gap = 0.0;
-            if (hasLines)
+            if (!hasLines)
             {
-                double length = lines.Bbox.Max.X - lines.Bbox.Min.X;
-                gap = 0.1 * length + 8.0 * textH;
-                DrawLines(b, lines, num, stations, waterlines, buttocks, fmt, textH, gap);
-                // 표는 Sheer plan 아래
-                ox = lines.Bbox.Min.X;
-                oy = lines.Bbox.Min.Z - gap;
+                // 표만: 위아래로 쌓음
+                double th = textH;
+                double oy = 0.0;
+                t1.Draw(b, 0.0, oy, th, LayerGrid, LayerText);
+                oy -= t1.UnitsHeight() * th + 12.0 * th;
+                t2.Draw(b, 0.0, oy, th, LayerGrid, LayerText);
+                b.Save(path);
+                return;
             }
 
-            double w, h;
+            Layout L = DrawLines(b, lines, num, data.StationX, data.Waterlines, data.Buttocks, fmt, textH);
 
-            // 표 1: 워터라인 반폭
-            var wlLabels = new List<string>();
-            foreach (double z in waterlines) wlLabels.Add(z.ToString(fmt, Inv));
-            string unitTag = string.IsNullOrEmpty(unitName) ? "" : " (UNIT: " + unitName.ToUpperInvariant() + ")";
-            DrawTable(b, ox, oy, "OFFSET TABLE - HALF-BREADTH AT WATERLINES" + unitTag,
-                      MakeHeaders(stations, num, fmt, "WL \\ ST"), wlLabels, wlTable, fmt, textH, out w, out h);
-            double nextY = oy - h - 5.0 * textH;
+            // 위쪽: 왼쪽 = 반폭 표, 오른쪽 = 높이 표 (Body plan 양옆, 폭에 맞춰 글자 크기 조정)
+            double margin = 4.0 * textH;
+            double availL = Math.Max(L.BodyLeft - margin - L.XMin, (L.XMax - L.XMin) * 0.2);
+            double rx = L.BodyRight + margin;
+            double availR = Math.Max(L.XMax - rx, (L.XMax - L.XMin) * 0.2);
+            // 두 표는 같은 글자 크기 (더 좁은 쪽에 맞춤)
+            double thT = Math.Min(textH, Math.Min(availL / t1.UnitsWidth(), availR / t2.UnitsWidth()));
+            t1.Draw(b, L.XMin, L.TableBottomY + t1.UnitsHeight() * thT, thT, LayerGrid, LayerText);
+            t2.Draw(b, rx, L.TableBottomY + t2.UnitsHeight() * thT, thT, LayerGrid, LayerText);
 
-            // 표 2: 버톡 높이
-            if (btTable != null && buttocks != null && buttocks.Count > 0)
-            {
-                var btLabels = new List<string>();
-                foreach (double y in buttocks) btLabels.Add(y.ToString(fmt, Inv));
-                DrawTable(b, ox, nextY, "OFFSET TABLE - HEIGHT AT BUTTOCKS" + unitTag,
-                          MakeHeaders(stations, num, fmt, "BT \\ ST"), btLabels, btTable, fmt, textH, out w, out h);
-                nextY = nextY - h - 5.0 * textH;
+            // 아래쪽: 주요 치수 (왼쪽), 표제란 (오른쪽)
+            double by = L.LowY - 10.0 * textH;
+            DrawParticulars(b, lines, num, L.XMin, by, textH);
 
-                // 표 3~: 버톡 2번째/3번째/... 교점 (벌브 등)
-                if (btExtra != null)
-                    for (int e = 0; e < btExtra.Count; e++)
-                    {
-                        DrawTable(b, ox, nextY, "OFFSET TABLE - HEIGHT AT BUTTOCKS, CROSSING #" + (e + 2) + " (BULB)" + unitTag,
-                                  MakeHeaders(stations, num, fmt, "BT \\ ST"), btLabels, btExtra[e], fmt, textH, out w, out h);
-                        nextY = nextY - h - 5.0 * textH;
-                    }
-            }
-
-            // 표제란 + 주요 치수
-            if (hasLines)
-            {
-                var rows = new List<string[]>();
-                rows.Add(new[] { "SHIP", string.IsNullOrEmpty(lines.ShipName) ? "-" : lines.ShipName });
-                rows.Add(new[] { "DRAWING", "LINES PLAN" });
-                rows.Add(new[] { "SCALE", string.IsNullOrEmpty(lines.ScaleText) ? "-" : lines.ScaleText });
-                rows.Add(new[] { "DATE", DateTime.Now.ToString("yyyy-MM-dd", Inv) });
-                rows.Add(new[] { "UNIT", string.IsNullOrEmpty(unitName) ? "-" : unitName.ToUpperInvariant() });
-                rows.Add(new[] { "LOA", (lines.Bbox.Max.X - lines.Bbox.Min.X).ToString("0.###", Inv) });
-                if (num != null && num.Valid)
-                    rows.Add(new[] { "LPP (AP-FP)", (num.FpX - num.ApX).ToString("0.###", Inv) });
-                double beam = 2.0 * Math.Max(Math.Abs(lines.Bbox.Min.Y), Math.Abs(lines.Bbox.Max.Y));
-                rows.Add(new[] { "B (MAX)", beam.ToString("0.###", Inv) });
-                rows.Add(new[] { "D (FROM BL)", (lines.Bbox.Max.Z - lines.Bbox.Min.Z).ToString("0.###", Inv) });
-                rows.Add(new[] { "NOTE", "DIMENSIONS FROM MODEL BBOX" });
-                DrawInfoBlock(b, ox, nextY, rows, textH);
-            }
+            var rows = new List<string[]>();
+            rows.Add(new[] { "SHIP", string.IsNullOrEmpty(lines.ShipName) ? "-" : lines.ShipName });
+            rows.Add(new[] { "DRAWING", "LINES & OFFSET PLAN" });
+            rows.Add(new[] { "SCALE", string.IsNullOrEmpty(lines.ScaleText) ? "-" : lines.ScaleText });
+            rows.Add(new[] { "DATE", DateTime.Now.ToString("yyyy-MM-dd", Inv) });
+            rows.Add(new[] { "UNIT", string.IsNullOrEmpty(unitName) ? "-" : unitName });
+            rows.Add(new[] { "STATION", num != null && num.Valid ? (num.FpOrigin ? "F.P. = 0 TO A.P." : "A.P. = 0 TO F.P.") : "-" });
+            rows.Add(new[] { "NOTE", "DIMENSIONS FROM MODEL BBOX" });
+            DrawInfoBlock(b, L.XMax - InfoBlockWidth(rows, textH), by, rows, textH);
 
             b.Save(path);
         }
 
-        // 스테이션 번호(있으면) + 스테이션 x 값 헤더 행들
-        static List<string[]> MakeHeaders(List<double> stations, StationNumbering num, string fmt, string corner)
+        // -------------------- 주요 치수 --------------------
+        static void DrawParticulars(DxfBuilder b, LinesData d, StationNumbering num, double ox, double oy, double tH)
         {
-            int nCols = stations.Count + 1;
-            var rows = new List<string[]>();
+            double um = OffsetGenDialog.UnitMeters(d.UnitName);   // 출력 단위 -> m
+            if (um <= 0) um = 1.0;
+            var rows = new List<string[]>();   // 항목, 값(m), 접두어
+            double loa = (d.Bbox.Max.X - d.Bbox.Min.X) * um;
+            rows.Add(new[] { "LENGTH O.A", "approx. " + loa.ToString("0.00", Inv) });
             if (num != null && num.Valid)
+                rows.Add(new[] { "LENGTH B.P", ((num.FpX - num.ApX) * um).ToString("0.00", Inv) });
+            double beam = 2.0 * Math.Max(Math.Abs(d.Bbox.Min.Y), Math.Abs(d.Bbox.Max.Y)) * um;
+            rows.Add(new[] { "BREADTH", "approx. " + beam.ToString("0.00", Inv) });
+            if (d.DepthM.HasValue) rows.Add(new[] { "DEPTH", d.DepthM.Value.ToString("0.00", Inv) });
+            if (d.DraftM.HasValue) rows.Add(new[] { "DRAFT DESIGN", d.DraftM.Value.ToString("0.00", Inv) });
+
+            double h = tH * 1.3;
+            double rowH = tH * 2.6;
+            int maxKey = 1, maxVal = 1;
+            foreach (var r in rows) { if (r[0].Length > maxKey) maxKey = r[0].Length; if (r[1].Length > maxVal) maxVal = r[1].Length; }
+            double valRight = (maxKey * 0.95 + 3.0 + maxVal * 0.95) * h;
+
+            b.Text(LayerText, ox, oy, tH * 2.0, "PRINCIPAL PARTICULARS", 0);
+            b.Line(LayerGrid, ox, oy - tH * 0.8, ox + valRight + 4.0 * h, oy - tH * 0.8);
+            for (int i = 0; i < rows.Count; i++)
             {
-                var r0 = new string[nCols];
-                r0[0] = "ST NO.";
-                for (int s = 0; s < stations.Count; s++) r0[s + 1] = num.Label(stations[s]);
-                rows.Add(r0);
+                double ty = oy - tH * 3.2 - i * rowH;
+                b.Text(LayerText, ox, ty, h, rows[i][0], 3);
+                b.Text(LayerText, ox + valRight, ty, h, rows[i][1], 2);
+                b.Text(LayerText, ox + valRight + 1.5 * h, ty, h, "m", 3);
             }
-            var r1 = new string[nCols];
-            r1[0] = corner;
-            for (int s = 0; s < stations.Count; s++) r1[s + 1] = stations[s].ToString(fmt, Inv);
-            rows.Add(r1);
-            return rows;
         }
 
-        // -------------------- 표 --------------------
-        static void DrawTable(DxfBuilder b, double ox, double oy, string title,
-                              List<string[]> headers, List<string> rowLabels, double?[,] values,
-                              string fmt, double textH, out double totalW, out double totalH)
+        // -------------------- 표제란 --------------------
+        static double InfoBlockWidth(List<string[]> rows, double tH)
         {
-            int nHead = headers.Count;
-            int nBody = rowLabels.Count;
-            int nRows = nHead + nBody;
-            int nCols = headers[0].Length;
-
-            var cells = new string[nRows, nCols];
-            for (int r = 0; r < nHead; r++)
-                for (int c = 0; c < nCols; c++) cells[r, c] = headers[r][c];
-            for (int r = 0; r < nBody; r++)
-            {
-                cells[nHead + r, 0] = rowLabels[r];
-                for (int c = 1; c < nCols; c++)
-                    cells[nHead + r, c] = values[r, c - 1].HasValue ? values[r, c - 1].Value.ToString(fmt, Inv) : "";
-            }
-
-            int maxLen = 1;
-            foreach (var cell in cells) if (cell != null && cell.Length > maxLen) maxLen = cell.Length;
-            double rowH = textH * 2.0;
-            double colW = textH * 0.9 * maxLen + textH * 1.5;
-            totalW = colW * nCols;
-            totalH = rowH * nRows;
-
-            // 제목
-            b.Text(LayerText, ox, oy + textH * 1.5, textH * 1.2, title, 0);
-
-            // 표의 좌상단이 (ox, oy), 아래로 내려감
-            for (int r = 0; r <= nRows; r++)
-                b.Line(LayerGrid, ox, oy - rowH * r, ox + totalW, oy - rowH * r);
-            for (int c = 0; c <= nCols; c++)
-                b.Line(LayerGrid, ox + colW * c, oy, ox + colW * c, oy - totalH);
-
-            for (int r = 0; r < nRows; r++)
-                for (int c = 0; c < nCols; c++)
-                {
-                    string t = cells[r, c];
-                    if (string.IsNullOrEmpty(t)) continue;
-                    b.Text(LayerText, ox + colW * c + colW / 2.0, oy - rowH * r - rowH / 2.0, textH, t, 1);
-                }
-        }
-
-        // -------------------- 표제란 / 주요 치수 --------------------
-        static void DrawInfoBlock(DxfBuilder b, double ox, double oy, List<string[]> rows, double tH)
-        {
-            int maxLen = 1;
-            int maxKey = 1;
+            int maxLen = 1, maxKey = 1;
             foreach (var r in rows)
             {
                 if (r[1].Length > maxLen) maxLen = r[1].Length;
                 if (r[0].Length > maxKey) maxKey = r[0].Length;
             }
+            return (tH * 0.9 * maxKey + tH * 2.0) + (tH * 0.9 * maxLen + tH * 2.0);
+        }
+
+        static void DrawInfoBlock(DxfBuilder b, double ox, double oy, List<string[]> rows, double tH)
+        {
+            int maxKey = 1;
+            foreach (var r in rows) if (r[0].Length > maxKey) maxKey = r[0].Length;
             double rowH = tH * 2.0;
             double keyW = tH * 0.9 * maxKey + tH * 2.0;
-            double valW = tH * 0.9 * maxLen + tH * 2.0;
-            double totalW = keyW + valW;
+            double totalW = InfoBlockWidth(rows, tH);
             double totalH = rowH * rows.Count;
 
             for (int r = 0; r <= rows.Count; r++)
@@ -1165,9 +1170,9 @@ namespace OffsetGenPlugin
         }
 
         // -------------------- 선도 --------------------
-        static void DrawLines(DxfBuilder b, LinesData d, StationNumbering num,
-                              List<double> stations, List<double> waterlines, List<double> buttocks,
-                              string fmt, double tH, double gap)
+        static Layout DrawLines(DxfBuilder b, LinesData d, StationNumbering num,
+                                List<double> stations, List<double> waterlines, List<double> buttocks,
+                                string fmt, double tH)
         {
             double xMin = d.Bbox.Min.X, xMax = d.Bbox.Max.X;
             double zMin = d.Bbox.Min.Z, zMax = d.Bbox.Max.Z;
@@ -1177,26 +1182,28 @@ namespace OffsetGenPlugin
             if (halfBeam < 1e-9) halfBeam = (xMax - xMin) * 0.1;
 
             double xMid = (xMin + xMax) / 2.0;
-            double yHB = zMax + gap;                    // Half-breadth plan 중심선의 y
-            double cxBody = xMax + gap + halfBeam;      // Body plan 중심선의 x
+            double yHB = zMin - 10.0 * tH - halfBeam;   // Half-breadth plan: Sheer plan 아래, 중심선(CL)이 아래쪽
+            double bodyBase = zMax + 14.0 * tH;         // Body plan: 위쪽 가운데, 기선의 y
+            double dyBody = bodyBase - zMin;            // Body plan의 z -> 도면 y 이동량
+            double cxBody = xMid;
             bool numbered = num != null && num.Valid;
 
             // ---- 뷰 제목 ----
             b.Text(LayerText, xMin, zMax + tH * 3.5, tH * 1.2, "SHEER PLAN", 0);
             b.Text(LayerText, xMin, yHB + halfBeam + tH * 3.5, tH * 1.2, "HALF-BREADTH PLAN", 0);
-            b.Text(LayerText, cxBody - halfBeam, zMax + tH * 3.5, tH * 1.2, "BODY PLAN", 0);
-            b.Text(LayerText, cxBody - halfBeam / 2.0, zMax + tH * 1.2, tH, "AFT", 1);
-            b.Text(LayerText, cxBody + halfBeam / 2.0, zMax + tH * 1.2, tH, "FWD", 1);
+            b.Text(LayerText, cxBody - halfBeam, zMax + dyBody + tH * 3.5, tH * 1.2, "BODY PLAN", 0);
+            b.Text(LayerText, cxBody - halfBeam / 2.0, zMax + dyBody + tH * 1.2, tH, "AFT", 1);
+            b.Text(LayerText, cxBody + halfBeam / 2.0, zMax + dyBody + tH * 1.2, tH, "FWD", 1);
 
             // ---- 기준선 / 중심선 ----
             b.Line(LinesRef, xMin, zMin, xMax, zMin);                       // BL (Sheer plan)
             b.Text(LayerText, xMax + tH * 0.5, zMin, tH, "BL", 3);
             b.Line(LinesRef, xMin, yHB, xMax, yHB);                         // CL (Half-breadth plan)
             b.Text(LayerText, xMax + tH * 0.5, yHB, tH, "CL", 3);
-            b.Line(LinesRef, cxBody, zMin, cxBody, zMax);                   // CL (Body plan)
-            b.Text(LayerText, cxBody, zMax + tH * 1.2 + tH * 1.6, tH, "CL", 1);
+            b.Line(LinesRef, cxBody, bodyBase, cxBody, zMax + dyBody);      // CL (Body plan)
+            b.Text(LayerText, cxBody, zMax + dyBody + tH * 1.2 + tH * 1.6, tH, "CL", 1);
 
-            // ---- 스테이션 격자 + 라벨 ----
+            // ---- 스테이션 격자 + 라벨 (Sheer plan 아래, 즉 두 평면 사이) ----
             foreach (double x in stations)
             {
                 b.Line(LinesGrid, x, zMin, x, zMax);
@@ -1204,7 +1211,6 @@ namespace OffsetGenPlugin
                 if (numbered)
                 {
                     b.Text(LayerText, x, zMin - tH * 1.5, tH, num.Label(x), 1);
-                    b.Text(LayerText, x, zMin - tH * 3.2, tH * 0.7, x.ToString(fmt, Inv), 1);
                 }
                 else
                 {
@@ -1227,9 +1233,9 @@ namespace OffsetGenPlugin
             foreach (double z in waterlines)
             {
                 b.Line(LinesGrid, xMin, z, xMax, z);
-                b.Line(LinesGrid, cxBody - halfBeam, z, cxBody + halfBeam, z);
+                b.Line(LinesGrid, cxBody - halfBeam, z + dyBody, cxBody + halfBeam, z + dyBody);
                 b.Text(LayerText, xMin - tH * 0.5, z, tH, z.ToString(fmt, Inv), 2);
-                b.Text(LayerText, cxBody + halfBeam + tH * 0.5, z, tH, z.ToString(fmt, Inv), 3);
+                b.Text(LayerText, cxBody + halfBeam + tH * 0.5, z + dyBody, tH, z.ToString(fmt, Inv), 3);
             }
 
             // ---- 버톡 격자 (Half-breadth, Body plan) + 라벨 ----
@@ -1238,10 +1244,10 @@ namespace OffsetGenPlugin
                 {
                     b.Line(LinesGrid, xMin, yHB + yb, xMax, yHB + yb);
                     b.Text(LayerText, xMin - tH * 0.5, yHB + yb, tH, yb.ToString(fmt, Inv), 2);
-                    b.Line(LinesGrid, cxBody + yb, zMin, cxBody + yb, zMax);
-                    b.Line(LinesGrid, cxBody - yb, zMin, cxBody - yb, zMax);
-                    b.Text(LayerText, cxBody + yb, zMin - tH * 1.5, tH, yb.ToString(fmt, Inv), 1);
-                    b.Text(LayerText, cxBody - yb, zMin - tH * 1.5, tH, yb.ToString(fmt, Inv), 1);
+                    b.Line(LinesGrid, cxBody + yb, bodyBase, cxBody + yb, zMax + dyBody);
+                    b.Line(LinesGrid, cxBody - yb, bodyBase, cxBody - yb, zMax + dyBody);
+                    b.Text(LayerText, cxBody + yb, bodyBase - tH * 1.5, tH, yb.ToString(fmt, Inv), 1);
+                    b.Text(LayerText, cxBody - yb, bodyBase - tH * 1.5, tH, yb.ToString(fmt, Inv), 1);
                 }
 
             // ---- Sheer plan: 프로파일 (y=0 단면), 없으면 단면 최저점으로 바닥선 대체 ----
@@ -1300,10 +1306,20 @@ namespace OffsetGenPlugin
                 foreach (var pts in CurveUtil.Prepare(ss.Curves, ySign, d.Tol, true))
                 {
                     var pl = new List<Point2d>();
-                    foreach (var p in pts) pl.Add(new Point2d(cxBody + sgn * p.Y * ySign, p.Z));
+                    foreach (var p in pts) pl.Add(new Point2d(cxBody + sgn * p.Y * ySign, p.Z + dyBody));
                     b.AddPolyline(LinesStation, pl);
                 }
             }
+
+            return new Layout
+            {
+                XMin = xMin,
+                XMax = xMax,
+                BodyLeft = cxBody - halfBeam,
+                BodyRight = cxBody + halfBeam + 8.0 * tH,   // 워터라인 라벨 폭
+                TableBottomY = zMax + 8.0 * tH,
+                LowY = yHB
+            };
         }
     }
 
@@ -1380,20 +1396,15 @@ namespace OffsetGenPlugin
             int nWl = dlg.Waterlines.Count;
             int nBt = dlg.UseButtocks ? dlg.Buttocks.Count : 0;
 
-            // wlTable[wl, 스테이션] = 반폭, btTable[버톡, 스테이션] = 높이 (없으면 null)
-            var wlTable = new double?[nWl, nSta];
-            double?[,] btTable = nBt > 0 ? new double?[nBt, nSta] : null;
-            // 벌브 등에서 스테이션이 버톡 평면을 여러 번 지나면: 기본 표 = 가장 낮은 교점, 추가 표 = 2번째, 3번째, 4번째 교점
-            var btExtra = new List<double?[,]>();
-            if (nBt > 0) for (int e = 0; e < 3; e++) btExtra.Add(new double?[nBt, nSta]);
+            // 표 데이터: 스테이션(행) x 수선/버톡(열). 한 칸의 값은 교점 전부 (오름차순, 벌브 등은 여러 개)
+            double mFrom = OffsetGenDialog.UnitMeters(dlg.FromUnit);   // 현재 단위 -> m (열 머리글용)
+            var od = new OffsetData(nSta, nWl, nBt);
+            foreach (double xs in dlg.Stations) od.StationX.Add(xs);
+            foreach (double zw in dlg.Waterlines) { od.Waterlines.Add(zw); od.WaterlinesM.Add(zw * mFrom); }
+            for (int k = 0; k < nBt; k++) { od.Buttocks.Add(dlg.Buttocks[k]); od.ButtocksM.Add(dlg.Buttocks[k] * mFrom); }
             var stationSections = new List<StationSection>();
 
-            // 버톡 평면 (y = 버톡값 * ySign)
-            var btPlanes = new List<Plane>();
-            for (int k = 0; k < nBt; k++)
-                btPlanes.Add(new Plane(new Point3d(0, dlg.Buttocks[k] * ySign, 0), Vector3d.YAxis));
-
-            // 4) 스테이션별 단면 -> 워터라인 반폭, 버톡 높이
+            // 4) 스테이션별 단면 -> 표의 각 열
             for (int s = 0; s < nSta; s++)
             {
                 double x = dlg.Stations[s];
@@ -1402,59 +1413,41 @@ namespace OffsetGenPlugin
 
                 if (sections.Count == 0)
                 {
-                    Log("x = {0}: 단면 없음 (빈 열로 출력)", x);
+                    Log("x = {0}: 단면 없음 (빈 행으로 출력)", x);
                     continue;
                 }
                 stationSections.Add(new StationSection { X = x, Curves = sections });
 
-                // 워터라인: 교차점 중 |y| 최댓값
+                // 수선: 단면과 z = 일정 평면의 교점들의 중심선에서의 거리 (y)
                 for (int w = 0; w < nWl; w++)
-                {
-                    var wl = new Plane(new Point3d(0, 0, dlg.Waterlines[w]), Vector3d.ZAxis);
-                    bool found = false;
-                    double maxY = 0.0;
+                    od.Wl[s, w] = CrossY(sections, dlg.Waterlines[w], ySign, tol);
 
-                    foreach (var c in sections)
-                    {
-                        var events = Rhino.Geometry.Intersect.Intersection.CurvePlane(c, wl, tol);
-                        if (events == null) continue;
-                        foreach (var ev in events)
-                        {
-                            double ya = Math.Abs(ev.PointA.Y);
-                            if (!found || ya > maxY) maxY = ya;
-                            found = true;
-                            if (ev.IsOverlap)
-                            {
-                                double yb = Math.Abs(ev.PointA2.Y);
-                                if (yb > maxY) maxY = yb;
-                            }
-                        }
-                    }
-
-                    if (found) wlTable[w, s] = maxY;
-                }
-
-                // 버톡: 교차점 중 z 최솟값(표 기본값). 서로 다른 교점이 2개 이상이면 최댓값을 상부 교점으로 따로 기록
+                // 버톡: 단면과 y = 일정 평면의 교점들의 높이 (z). CENTER CONTOUR = y = 0
                 for (int k = 0; k < nBt; k++)
+                    od.Bt[s, k] = CrossZ(sections, dlg.Buttocks[k] * ySign, tol);
+                od.Center[s] = CrossZ(sections, 0.0, tol);
+
+                // BOTTOM TANGENT LINE: 단면이 기선(z = 모델 최저점)과 만나는 평탄부 끝의 반폭
+                var flat = CrossY(sections, bbox.Min.Z, ySign, tol);
+                if (flat.Count > 0 && flat[flat.Count - 1] > tol * 10.0) od.BottomTangent[s] = flat[flat.Count - 1];
+
+                // DECK SIDE LINE: 갑판 가장자리(단면 최상단)의 반폭, SIDE TANGENT LINE: 현측이 이 단면의 최대 반폭에 닿는 높이
+                var polys = CurveUtil.Prepare(sections, ySign, tol, true);
+                if (polys.Count > 0)
                 {
-                    var zs = new List<double>();
+                    var one = new DenseSection { X = x, Curves = sections, Polys = polys };
+                    var ol = CurveUtil.ComputeOutline(new List<DenseSection> { one }, bbox, ySign, tol);
+                    if (ol.Count > 0 && ol[0].YTop > tol * 10.0) od.DeckSide[s] = ol[0].YTop;
 
-                    foreach (var c in sections)
+                    double yMax = 0.0;
+                    foreach (var pl in polys)
+                        foreach (var p in pl)
+                            if (p.Y * ySign > yMax) yMax = p.Y * ySign;
+                    if (yMax > tol * 10.0)
                     {
-                        var events = Rhino.Geometry.Intersect.Intersection.CurvePlane(c, btPlanes[k], tol);
-                        if (events == null) continue;
-                        foreach (var ev in events)
-                        {
-                            zs.Add(ev.PointA.Z);
-                            if (ev.IsOverlap) zs.Add(ev.PointA2.Z);
-                        }
+                        var zz = CrossZ(sections, (yMax - tol) * ySign, tol);
+                        if (zz.Count > 0) od.SideTangent[s] = zz[0];
                     }
-
-                    var distinct = PolyTools.Distinct(zs, Math.Max(tol * 10.0, 1e-9));
-                    if (distinct.Count == 0) continue;
-                    btTable[k, s] = distinct[0];
-                    for (int e = 1; e < distinct.Count && e <= btExtra.Count; e++)
-                        btExtra[e - 1][k, s] = distinct[e];
                 }
             }
 
@@ -1509,7 +1502,7 @@ namespace OffsetGenPlugin
                     {
                         btSections.Add(new ButtockSection { Y = bv, Lines = exactLines, Curves = exactCurves, Exact = true });
                         nExact++;
-                        ValidateButtock(k, bv, exactLines, dlg.Stations, btTable, tol);
+                        ValidateButtock(k, bv, exactLines, dlg.Stations, od, tol);
                         continue;
                     }
                     if (dlg.ExactButtocks)
@@ -1584,22 +1577,29 @@ namespace OffsetGenPlugin
             if (docUnit != null && docUnit != dlg.FromUnit)
                 Log("주의: 선택한 현재 단위({0})가 라이노 모델 단위({1})와 다릅니다.", dlg.FromUnit, docUnit);
 
-            var oStations = ScaleList(dlg.Stations, sc);
-            var oWaterlines = ScaleList(dlg.Waterlines, sc);
-            var oButtocks = ScaleList(dlg.Buttocks, sc);
-            var oWlTable = ScaleTable(wlTable, sc);
-            double?[,] oBtTable = btTable == null ? null : ScaleTable(btTable, sc);
+            // 출력 단위로 환산한 표 데이터 (열 머리글의 수선/버톡 값은 미터 그대로)
+            var oData = od.Scaled(sc);
 
-            // 추가 교점 표: 값이 하나라도 있는 것만 출력 (2번째, 3번째, ... 교점)
-            var oBtExtra = new List<double?[,]>();
-            foreach (var t in btExtra)
+            var num = new StationNumbering
             {
-                int cnt = 0;
-                foreach (var v in t) if (v.HasValue) cnt++;
-                if (cnt == 0) break;
-                oBtExtra.Add(ScaleTable(t, sc));
-                Log("버톡 {0}번째 교점: {1}곳 (벌브 등에서 한 스테이션이 버톡 평면을 여러 번 지남) -> 별도 표로 출력", oBtExtra.Count + 1, cnt);
+                Valid = dlg.FpX > dlg.ApX && dlg.StationSpacing > 0,
+                ApX = dlg.ApX * sc,
+                FpX = dlg.FpX * sc,
+                Spacing = dlg.StationSpacing * sc,
+                FpOrigin = dlg.FpOrigin
+            };
+            var rowLabels = new List<string>();
+            foreach (double xs in oData.StationX)
+                rowLabels.Add(num.Valid ? num.Label(xs) : xs.ToString(fmt, CultureInfo.InvariantCulture));
+
+            // 값이 여러 개인 칸 수 (벌브 등)
+            int nMulti = 0;
+            for (int s = 0; s < nSta; s++)
+            {
+                for (int k = 0; k < nBt; k++) if (od.Bt[s, k] != null && od.Bt[s, k].Count > 1) nMulti++;
+                if (od.Center[s] != null && od.Center[s].Count > 1) nMulti++;
             }
+            if (nMulti > 0) Log("높이 표에서 교점이 2개 이상인 칸: {0}곳 (벌브 등) -> 한 칸에 오름차순으로 쌓아 출력", nMulti);
 
             // 6) 파일 출력 (엑셀 등에서 파일을 열어두면 쓰기 실패할 수 있음)
             try
@@ -1607,19 +1607,13 @@ namespace OffsetGenPlugin
                 if (dlg.WriteCsv)
                 {
                     string csvPath = basePath + ".csv";
-                    WriteCsv(csvPath, oStations, oWaterlines, oWlTable, oButtocks, oBtTable, oBtExtra, fmt, unitName);
+                    var c1 = OffsetTableFactory.CenterLineTable(oData, rowLabels, fmt, unitName);
+                    var c2 = OffsetTableFactory.BaseLineTable(oData, rowLabels, fmt, unitName);
+                    File.WriteAllText(csvPath, OffsetTableFactory.ToCsv(c1, c2), Encoding.ASCII);
                     Log("CSV 저장: {0}", csvPath);
                 }
                 if (dlg.WriteDxf)
                 {
-                    var num = new StationNumbering
-                    {
-                        Valid = dlg.FpX > dlg.ApX && dlg.StationSpacing > 0,
-                        ApX = dlg.ApX * sc,
-                        FpX = dlg.FpX * sc,
-                        Spacing = dlg.StationSpacing * sc
-                    };
-
                     LinesData lines = null;
                     if (dlg.IncludeLines)
                     {
@@ -1640,14 +1634,15 @@ namespace OffsetGenPlugin
                             DeckLine = dlg.DeckLine,
                             ShipName = dlg.ShipName,
                             ScaleText = dlg.ScaleText,
-                            UnitName = unitName
+                            UnitName = unitName,
+                            DepthM = dlg.DepthM,
+                            DraftM = dlg.DraftM
                         };
                         lines = ScaleLines(lines, sc);
                     }
 
                     string dxfPath = basePath + ".dxf";
-                    DxfWriter.Write(dxfPath, oStations, oWaterlines, oWlTable, oButtocks, oBtTable,
-                                    fmt, dlg.TextHeight, num, lines, unitName, oBtExtra);
+                    DxfWriter.Write(dxfPath, oData, fmt, dlg.TextHeight, num, lines, unitName);
                     Log("DXF 저장{0}: {1}", dlg.IncludeLines ? " (선도 포함)" : "", dxfPath);
                 }
             }
@@ -1734,14 +1729,15 @@ namespace OffsetGenPlugin
             r.ShipName = d.ShipName;
             r.ScaleText = d.ScaleText;
             r.UnitName = d.UnitName;
+            r.DepthM = d.DepthM;
+            r.DraftM = d.DraftM;
             return r;
         }
 
         // 정밀 추적한 버톡 곡선과 표(스테이션 단면 교차)의 최저 z가 서로 맞는지 확인해 명령줄에 보고
         static void ValidateButtock(int k, double bv, List<List<Point3d>> lines, List<double> stations,
-                                    double?[,] btTable, double tol)
+                                    OffsetData od, double tol)
         {
-            if (btTable == null) return;
             var polys = new List<List<P2>>();
             foreach (var l in lines) polys.Add(ButtockTracer.ToXZ(l));
 
@@ -1749,19 +1745,61 @@ namespace OffsetGenPlugin
             int checkedN = 0, missing = 0;
             for (int s = 0; s < stations.Count; s++)
             {
-                if (!btTable[k, s].HasValue) continue;
+                var tab = od.Bt[s, k];
+                if (tab == null || tab.Count == 0) continue;
                 double x = stations[s];
                 if (!PolyTools.InXRange(polys, x, 0.0)) continue;
                 var zs = PolyTools.CrossingsAtX(polys, x, tol * 0.1);
                 if (zs.Count == 0) { missing++; continue; }
-                double d = Math.Abs(zs[0] - btTable[k, s].Value);
+                double d = Math.Abs(zs[0] - tab[0]);
                 checkedN++;
                 if (d > maxDiff) { maxDiff = d; maxAt = x; }
             }
             double limit = Math.Max(tol * 5.0, 1e-9);
             if (maxDiff > limit || missing > 0)
                 Log("  버톡 y = {0} 검증: 표 {1}곳 비교, 최대 차이 {2:0.#####} (x = {3}), 교점 없음 {4}곳 -> 확인 필요",
-                                   bv, checkedN, maxDiff, maxAt, missing);
+                    bv, checkedN, maxDiff, maxAt, missing);
+        }
+
+        // 단면 커브들과 수평면 z = 일정 의 교점들의 중심선에서의 거리 (한쪽 현만, 오름차순, 가까운 값은 하나로)
+        static List<double> CrossY(List<Curve> secs, double z, double ySign, double tol)
+        {
+            var ys = new List<double>();
+            var plane = new Plane(new Point3d(0, 0, z), Vector3d.ZAxis);
+            foreach (var c in secs)
+            {
+                var events = Rhino.Geometry.Intersect.Intersection.CurvePlane(c, plane, tol);
+                if (events == null) continue;
+                foreach (var ev in events)
+                {
+                    double y = ev.PointA.Y * ySign;
+                    if (y >= -tol) ys.Add(Math.Max(y, 0.0));
+                    if (ev.IsOverlap)
+                    {
+                        double y2 = ev.PointA2.Y * ySign;
+                        if (y2 >= -tol) ys.Add(Math.Max(y2, 0.0));
+                    }
+                }
+            }
+            return PolyTools.Distinct(ys, Math.Max(tol * 10.0, 1e-9));
+        }
+
+        // 단면 커브들과 수직면 y = 일정 의 교점들의 높이 (오름차순, 가까운 값은 하나로)
+        static List<double> CrossZ(List<Curve> secs, double yPlane, double tol)
+        {
+            var zs = new List<double>();
+            var plane = new Plane(new Point3d(0, yPlane, 0), Vector3d.YAxis);
+            foreach (var c in secs)
+            {
+                var events = Rhino.Geometry.Intersect.Intersection.CurvePlane(c, plane, tol);
+                if (events == null) continue;
+                foreach (var ev in events)
+                {
+                    zs.Add(ev.PointA.Z);
+                    if (ev.IsOverlap) zs.Add(ev.PointA2.Z);
+                }
+            }
+            return PolyTools.Distinct(zs, Math.Max(tol * 10.0, 1e-9));
         }
 
         static int GetOrCreateLayer(RhinoDoc doc, string name, Color color)
@@ -1777,75 +1815,6 @@ namespace OffsetGenPlugin
             var objs = doc.Objects.FindByLayer(doc.Layers[layerIndex]);
             if (objs == null) return;
             foreach (var o in objs) doc.Objects.Delete(o, true);
-        }
-
-        static void WriteCsv(string path, List<double> stations, List<double> waterlines, double?[,] wlTable,
-                             List<double> buttocks, double?[,] btTable, List<double?[,]> btExtra, string fmt, string unitName)
-        {
-            var sb = new StringBuilder();
-            var inv = CultureInfo.InvariantCulture;
-
-            // 표 1: 워터라인 반폭
-            sb.Append("Waterline Z \\ Station X (" + unitName + ")");
-            for (int s = 0; s < stations.Count; s++)
-                sb.Append(',').Append(stations[s].ToString(fmt, inv));
-            sb.AppendLine();
-
-            for (int w = 0; w < waterlines.Count; w++)
-            {
-                sb.Append(waterlines[w].ToString(fmt, inv));
-                for (int s = 0; s < stations.Count; s++)
-                {
-                    sb.Append(',');
-                    if (wlTable[w, s].HasValue) sb.Append(wlTable[w, s].Value.ToString(fmt, inv));
-                }
-                sb.AppendLine();
-            }
-
-            // 표 2: 버톡 높이 (빈 줄로 구분)
-            if (btTable != null && buttocks != null && buttocks.Count > 0)
-            {
-                sb.AppendLine();
-                sb.Append("Buttock Y \\ Station X (" + unitName + ")");
-                for (int s = 0; s < stations.Count; s++)
-                    sb.Append(',').Append(stations[s].ToString(fmt, inv));
-                sb.AppendLine();
-
-                for (int k = 0; k < buttocks.Count; k++)
-                {
-                    sb.Append(buttocks[k].ToString(fmt, inv));
-                    for (int s = 0; s < stations.Count; s++)
-                    {
-                        sb.Append(',');
-                        if (btTable[k, s].HasValue) sb.Append(btTable[k, s].Value.ToString(fmt, inv));
-                    }
-                    sb.AppendLine();
-                }
-            }
-
-            // 표 3~: 버톡 2번째/3번째/... 교점 (벌브 등). 값이 있는 스테이션만 채워짐
-            if (btExtra != null && buttocks != null && buttocks.Count > 0)
-                for (int e = 0; e < btExtra.Count; e++)
-                {
-                    sb.AppendLine();
-                    sb.Append("Buttock Y \\ Station X - crossing #" + (e + 2) + " (" + unitName + ")");
-                    for (int s = 0; s < stations.Count; s++)
-                        sb.Append(',').Append(stations[s].ToString(fmt, inv));
-                    sb.AppendLine();
-
-                    for (int k = 0; k < buttocks.Count; k++)
-                    {
-                        sb.Append(buttocks[k].ToString(fmt, inv));
-                        for (int s = 0; s < stations.Count; s++)
-                        {
-                            sb.Append(',');
-                            if (btExtra[e][k, s].HasValue) sb.Append(btExtra[e][k, s].Value.ToString(fmt, inv));
-                        }
-                        sb.AppendLine();
-                    }
-                }
-
-            File.WriteAllText(path, sb.ToString(), Encoding.ASCII);
         }
     }
 }

@@ -45,6 +45,7 @@
     <Compile Include="AdaptiveSampler.cs" />
     <Compile Include="ButtockTracer.cs" />
     <Compile Include="OffsetGen2.cs" />
+    <Compile Include="OffsetTables.cs" />
     <Compile Include="PolyTools.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
