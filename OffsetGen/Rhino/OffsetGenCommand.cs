@@ -90,6 +90,8 @@ namespace OffsetGenPlugin
             double?[,] btTable = nBt > 0 ? new double?[nBt, nSta] : null;
             var stationSections = new List<StationSection>();
 
+            ReportRanges(dlg, bbox);
+
             // 4) 스테이션별 단면 -> 워터라인 반폭, 버톡 높이 (표 값)
             ComputeTables(breps, dlg, tol, ySign, wlTable, btTable, stationSections);
 
@@ -193,6 +195,24 @@ namespace OffsetGenPlugin
             return Result.Success;
         }
 
+        // 입력한 스테이션/워터라인/버톡이 선체 범위 안에 있는지 점검 (단위 불일치나 범위 오입력 발견용)
+        static void ReportRanges(OffsetGenDialog dlg, BoundingBox bbox)
+        {
+            double e = 1e-9;
+            int outSta = 0, outWl = 0, outBt = 0;
+            foreach (double x in dlg.Stations) if (x < bbox.Min.X - e || x > bbox.Max.X + e) outSta++;
+            foreach (double z in dlg.Waterlines) if (z < bbox.Min.Z - e || z > bbox.Max.Z + e) outWl++;
+            double halfBeam = Math.Max(Math.Abs(bbox.Min.Y), Math.Abs(bbox.Max.Y));
+            if (dlg.UseButtocks) foreach (double y in dlg.Buttocks) if (y > halfBeam + e) outBt++;
+
+            Log("입력 점검: 선체 x {0:0.###}~{1:0.###}, z {2:0.###}~{3:0.###}, 반폭 {4:0.###} (모델 단위)",
+                bbox.Min.X, bbox.Max.X, bbox.Min.Z, bbox.Max.Z, halfBeam);
+            Log("  스테이션 {0}개 (범위 밖 {1}), 워터라인 {2}개 (범위 밖 {3}), 버톡 {4}개 (폭 밖 {5})",
+                dlg.Stations.Count, outSta, dlg.Waterlines.Count, outWl, dlg.UseButtocks ? dlg.Buttocks.Count : 0, outBt);
+            if (outSta > 0 || outWl > 0 || outBt > 0)
+                Log("  주의: 범위 밖 값은 빈 칸이 됩니다. 입력 단위(탭 2의 현재 단위)와 모델 단위가 맞는지 확인하세요.");
+        }
+
         // 스테이션 단면에서 워터라인 반폭(|y| 최댓값)과 버톡 높이(z 최솟값) 표를 채움
         static void ComputeTables(List<Brep> breps, OffsetGenDialog dlg, double tol, double ySign,
                                   double?[,] wlTable, double?[,] btTable, List<StationSection> stationSections)
@@ -271,25 +291,37 @@ namespace OffsetGenPlugin
             double halfBeam = Math.Max(Math.Abs(bbox.Min.Y), Math.Abs(bbox.Max.Y));
             int nBt = dlg.Buttocks.Count;
             int nSta = dlg.Stations.Count;
-            Log("버톡 라인 추적: {0}개", nBt);
+            Log("선체 범위: x {0:0.###} ~ {1:0.###}, y {2:0.###} ~ {3:0.###}, z {4:0.###} ~ {5:0.###}  (허용오차 {6})",
+                bbox.Min.X, bbox.Max.X, bbox.Min.Y, bbox.Max.Y, bbox.Min.Z, bbox.Max.Z, tol);
+            Log("버톡 라인 추적: {0}개 (조밀 단면 준비 중...)", nBt);
+
+            var ctx = TraceContext.Build(breps, bbox, tol, 240);
+            if (ctx.StaX.Count == 0)
+            {
+                Log("  조밀 단면을 만들지 못했습니다. 선체 선택을 확인하세요.");
+                return;
+            }
 
             for (int k = 0; k < nBt; k++)
             {
                 double bv = dlg.Buttocks[k];
                 if (bv >= halfBeam - tol * 5.0)
                 {
-                    Log("  버톡 y = {0}: 최대 폭({1}) 이상이라 라인을 그리지 않음 (표 높이만 계산)", bv, halfBeam);
+                    Log("  버톡 y = {0}: 최대 폭({1:0.###}) 이상이라 라인을 그리지 않음 (표 높이만 계산)", bv, halfBeam);
                     continue;
                 }
 
                 var tableZ = new List<double?>();
                 for (int s = 0; s < nSta; s++) tableZ.Add(btTable[k, s]);
 
-                var r = ButtockTracer.Trace(breps, bv, ySign, tol, bbox, dlg.Stations, tableZ, dlg.SmoothButtocks);
-                string check = r.ChecksTotal > 0 ? string.Format(", 표 값 일치 {0}/{1}", r.ChecksOk, r.ChecksTotal) : "";
-                Log("  버톡 y = {0}: {1}, 조각 {2}개{3}{4}", bv,
-                                   r.Method == "exact" ? "정확 교선" : (r.Method == "sampled" ? "샘플링 대체" : "없음"),
-                                   r.Lines.Count, check, r.Note.Length > 0 ? " [" + r.Note + "]" : "");
+                var r = ButtockTracer.Trace(ctx, bv, ySign, dlg.Stations, tableZ, dlg.SmoothButtocks);
+
+                string method = r.Method == "exact" ? "정확 교선" :
+                                (r.Method == "cloud" ? "점구름 복원" : (r.Method == "sampled" ? "최저z 샘플링" : "없음"));
+                string range = r.Lines.Count > 0 ? string.Format(", z {0:0.###}~{1:0.###}", r.ZMin, r.ZMax) : "";
+                string check = r.ChecksTotal > 0 ? string.Format(", 검증 {0}/{1}", r.ChecksOk, r.ChecksTotal) : "";
+                string note = r.Note.Length > 0 ? " [" + r.Note + "]" : "";
+                Log("  버톡 y = {0}: {1}, 조각 {2}개{3}{4}{5}", bv, method, r.Lines.Count, range, check, note);
 
                 if (r.Lines.Count > 0)
                     btSections.Add(new ButtockSection { Y = bv, Lines = r.Lines, Curves = r.Curves, Method = r.Method });

@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyProduct("OffsetGen")]
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
-[assembly: AssemblyInformationalVersion("1.0.0-alpha.2")]
+[assembly: AssemblyInformationalVersion("1.0.0-alpha.3")]
 [assembly: ComVisible(false)]
 
 // 플러그인 GUID (명령 GUID와 다름)

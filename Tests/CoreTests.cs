@@ -22,6 +22,7 @@ public static class CoreTests
         TestChain();
         TestDistance();
         TestSamplerBulb();
+        TestCloud();
         TestCsv();
         TestDxf();
         Console.WriteLine("PASS {0}, FAIL {1}", pass, fail);
@@ -134,6 +135,53 @@ public static class CoreTests
         AdaptiveSampler.Eval gap = x => (x > 4 && x < 6) ? (double?)null : x * 0.1;
         var two = AdaptiveSampler.Sample(gap, 0, 10, 10, 1, 0.01, 10000);
         Check(two.Count == 2, "gap splits pieces");
+    }
+
+
+    // 벌브 모양 버톡: 바닥 직선 -> 선수 끝에서 반원으로 휘어 올라 -> 선미 쪽으로 되돌아오다가 -> 선수 쪽 스템으로 올라감
+    // (x에 대해 z가 다가 함수가 되는 곡선). 스테이션식(x 고정)과 워터라인식(z 고정) 교차점을 모두 모아 복원.
+    static void TestCloud()
+    {
+        // 매개변수 곡선 샘플 -> 곡선 위의 매우 촘촘한 점
+        var curve = new List<P2>();
+        for (double x = 0; x <= 100; x += 0.01) curve.Add(new P2(x, -3.0));
+        for (double t = -Math.PI / 2; t <= Math.PI / 2; t += 0.0005)           // 선수 끝 반원 (중심 100,-1.5 반지름 1.5)
+            curve.Add(new P2(100 + 1.5 * Math.Cos(t), -1.5 + 1.5 * Math.Sin(t)));
+        for (double x = 100; x >= 96; x -= 0.01) curve.Add(new P2(x, 0.0));    // 윗면으로 되돌아옴
+        for (double t = 0; t <= 1; t += 0.0005) curve.Add(new P2(96 + 12 * t, 0.0 + 8 * t));   // 스템처럼 앞위로 상승
+
+        // 스테이션(x 0.25 간격)과 워터라인(z 0.05 간격)이 곡선과 만나는 점 모으기
+        var cloud = new List<P2>();
+        for (int i = 1; i < curve.Count; i++)
+        {
+            P2 a = curve[i - 1], b = curve[i];
+            for (double x = Math.Ceiling(Math.Min(a.X, b.X) * 4) / 4; x <= Math.Max(a.X, b.X); x += 0.25)
+                if (a.X != b.X) { double t = (x - a.X) / (b.X - a.X); if (t >= 0 && t <= 1) cloud.Add(new P2(x, a.Y + t * (b.Y - a.Y))); }
+            double zlo = Math.Min(a.Y, b.Y), zhi = Math.Max(a.Y, b.Y);
+            for (double z = Math.Ceiling(zlo * 20) / 20; z <= zhi; z += 0.05)
+                if (a.Y != b.Y) { double t = (z - a.Y) / (b.Y - a.Y); if (t >= 0 && t <= 1) cloud.Add(new P2(a.X + t * (b.X - a.X), z)); }
+        }
+
+        var chains = CloudTracer.Order(cloud, 0.02, 0.6, 5);
+        Check(chains.Count == 1, "cloud -> single chain (got " + chains.Count + ")");
+        var ch = chains[0];
+        Check(ch[0].X < 1.0 && Near(ch[0].Y, -3.0, 0.05), "chain starts at aft end");
+        double top = double.MinValue, maxStep = 0.0, maxX = double.MinValue;
+        for (int i = 0; i < ch.Count; i++)
+        {
+            top = Math.Max(top, ch[i].Y); maxX = Math.Max(maxX, ch[i].X);
+            if (i > 0) maxStep = Math.Max(maxStep, Math.Sqrt((ch[i].X - ch[i - 1].X) * (ch[i].X - ch[i - 1].X) + (ch[i].Y - ch[i - 1].Y) * (ch[i].Y - ch[i - 1].Y)));
+        }
+        Check(top > 7.5, "chain reaches upper stem, not only bottom (top z " + top.ToString("0.00", CultureInfo.InvariantCulture) + ")");
+        Check(maxX > 101.4, "chain includes bulb nose (max x " + maxX.ToString("0.00", CultureInfo.InvariantCulture) + ")");
+        Check(maxStep <= 0.6, "no jumps between branches (max step " + maxStep.ToString("0.00", CultureInfo.InvariantCulture) + ")");
+
+        // 최근접 이웃식이면 바닥만 따라가는 것과 달리, 모든 점의 곡선 이탈 거리 검사
+        var pl = new List<P3>(); foreach (var p in ch) pl.Add(new P3(p.X, 0, p.Y));
+        double worst = 0.0;
+        for (int i = 0; i < curve.Count; i += 37)
+            worst = Math.Max(worst, PolyTools.DistanceXZ(pl, curve[i].X, curve[i].Y));
+        Check(worst < 0.3, "chain covers the whole curve (worst gap " + worst.ToString("0.00", CultureInfo.InvariantCulture) + ")");
     }
 
     static void TestCsv()
