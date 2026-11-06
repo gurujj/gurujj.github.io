@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 순수 계산부(Core) 콘솔 시험. 라이노 없이 실행됨: 빌드 후 OffsetGen.Tests.exe 실행, 종료 코드 0 = 모두 통과 -->
+<!-- 버톡 내삽(AdaptiveSampler) 콘솔 시험. 라이노 없이 실행: 빌드 후 OffsetGen.Tests.exe 실행, 종료 코드 0 = 통과 -->
 <Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -31,16 +31,8 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="CoreTests.cs" />
-    <Compile Include="..\OffsetGen\Core\AdaptiveSampler.cs"><Link>Core\AdaptiveSampler.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\AutoDefaults.cs"><Link>Core\AutoDefaults.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\CloudTracer.cs"><Link>Core\CloudTracer.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\CsvWriter.cs"><Link>Core\CsvWriter.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\DxfBuilder.cs"><Link>Core\DxfBuilder.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\ListBuilder.cs"><Link>Core\ListBuilder.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\PolyTools.cs"><Link>Core\PolyTools.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\Pt.cs"><Link>Core\Pt.cs</Link></Compile>
-    <Compile Include="..\OffsetGen\Core\StationNumbering.cs"><Link>Core\StationNumbering.cs</Link></Compile>
+    <Compile Include="AdaptiveSamplerTests.cs" />
+    <Compile Include="..\OffsetGen\AdaptiveSampler.cs"><Link>AdaptiveSampler.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
