@@ -51,13 +51,20 @@ namespace OffsetGenPlugin
     {
         public static JPOffsetsPlugIn Instance { get; private set; }
         public JPOffsetsPlugIn() { Instance = this; }
+
+        // 플러그인을 처음 설치하거나 .rhp 를 불러올 때 제작자 표시
+        protected override Rhino.PlugIns.LoadReturnCode OnLoad(ref string errorMessage)
+        {
+            RhinoApp.WriteLine("JPOffsets " + PlugInInfo.Version + " - " + PlugInInfo.Credit);
+            return Rhino.PlugIns.LoadReturnCode.Success;
+        }
     }
 
     public static class PlugInInfo
     {
         public const string Author = "Jejun Park, Ph. D.";
         public const string Credit = "made by Jejun Park, Ph. D.";
-        public const string Version = "1.2.0-alpha.2";
+        public const string Version = "1.2.0-alpha.3";
     }
 
     // ---------------------------------------------------------------
@@ -361,7 +368,6 @@ namespace OffsetGenPlugin
             ok.Click += OnOk;
             Controls.Add(ok);
             Controls.Add(cancel);
-            Controls.Add(new Label { Text = PlugInInfo.Credit, Left = 12, Top = 746, AutoSize = true, ForeColor = Color.Gray });
             AcceptButton = ok;
             CancelButton = cancel;
 
@@ -945,6 +951,7 @@ namespace OffsetGenPlugin
         const string LinesDeck = "LINES_DECK";
         const string LinesRef = "LINES_REF";
         const string LinesLabel = "LINES_LABEL";
+        const string StationLower = "LINES_STATION_TEXT_LOWER";   // Half-breadth plan 아래 스테이션 번호 (필요 없으면 이 레이어만 삭제)
         const string CalloutText = "LINES_CALLOUT_TEXT";        // 빨간 라벨 글자 (이 레이어만 끄거나 지우면 됨)
         const string CalloutLeader = "LINES_CALLOUT_LEADER";    // 라벨 지시선 (주황)
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -967,6 +974,7 @@ namespace OffsetGenPlugin
             b.AddLayer(LinesDeck, 6);
             b.AddLayer(LinesRef, 7);
             b.AddLayer(LinesLabel, 4);
+            b.AddLayer(StationLower, 7);
             b.AddLayer(CalloutText, 1);
             b.AddLayer(CalloutLeader, 30);
 
@@ -992,70 +1000,58 @@ namespace OffsetGenPlugin
                 return;
             }
 
-            // ---------- 크기 (선체 길이 u 에 대한 비율, 참고 도면 실측) ----------
+            // ---------- 글자 크기를 먼저 정함 (읽히는 크기 우선), 블록 크기 -> 배치 -> 도면 크기 순서 ----------
             double xMin = lines.Bbox.Min.X, xMax = lines.Bbox.Max.X;
             double zLow = Math.Min(0.0, lines.Bbox.Min.Z);          // 기선 z = 0 (그 아래로 내려간 선체가 있으면 포함)
             double zMax = lines.Bbox.Max.Z;
             double halfBeam = Math.Max(Math.Abs(lines.Bbox.Min.Y), Math.Abs(lines.Bbox.Max.Y));
             double u = xMax - xMin;
             if (halfBeam < 1e-9) halfBeam = u * 0.1;
-            double bodyH = zMax - zLow;
             double um = OffsetGenDialog.UnitMeters(unitName);
             if (um <= 0) um = 1.0;
 
-            double tH = textH > 0 ? textH : u * 0.005;               // 기본 글자 높이 (스테이션 번호 등)
+            double tH = textH > 0 ? textH : u * 0.0055;              // 기본 글자 높이 (모든 간격의 기준)
 
-            // 시안 라벨 글자 높이: 가장 촘촘한 수선 간격에 맞춰 (사진처럼 모든 선에 작은 라벨)
+            // 시안 라벨 글자 높이: 가장 촘촘한 수선 간격에 맞추되 읽히는 크기 아래로는 줄이지 않음 (가까운 것은 생략)
             double minGap = double.MaxValue;
             var wlSorted = new List<double>(data.Waterlines); wlSorted.Sort();
             for (int i = 1; i < wlSorted.Count; i++)
                 if (wlSorted[i] - wlSorted[i - 1] > 1e-9) minGap = Math.Min(minGap, wlSorted[i] - wlSorted[i - 1]);
             double cyH = minGap < double.MaxValue ? 0.85 * minGap : 0.7 * tH;
-            cyH = Math.Max(0.32 * tH, Math.Min(0.7 * tH, cyH));
-            double labW = 10.0 * cyH + 0.5 * tH;                      // "23.0 W.L." 폭 (여유 포함)
+            cyH = Math.Max(0.5 * tH, Math.Min(0.85 * tH, cyH));
+            double labW = 10.5 * cyH + 0.3 * tH;                     // "23.0 W.L." 폭 (여유 포함)
+            double labMargin = 1.5 * tH;                              // 도면과 시안 라벨 사이 마진
 
-            // 위쪽 띠: 왼쪽 표 | Body plan (라벨 포함) | 오른쪽 표
-            double cxBody = xMin + 0.547 * u;
-            double bodyL = cxBody - halfBeam, bodyR = cxBody + halfBeam;
-            double outL = bodyL - labW - 0.6 * tH, outR = bodyR + labW + 0.6 * tH;
-            double gap = 0.030 * u;                                   // 왼쪽 표 | Body plan | 오른쪽 표 사이 간격
-            double tLeft = xMin - 0.012 * u;
-            double availL = Math.Max(outL - gap - tLeft, u * 0.2);
-            double rx = outR + gap;
-            double availR = Math.Max(xMax - rx, u * 0.2);
+            double thTable = 0.8 * tH;                                // 표 글자: 폭에 맞춰 줄이지 않고 고정 (도면이 표 크기에 맞춰 커짐)
 
-            double thT = Math.Min(tH * 0.9, Math.Min(availL / t1.UnitsWidth(), availR / t2.UnitsWidth()));
-            double bodyNeed = bodyH + 0.045 * u;                      // Body plan + 아래 제목
-            double hBand = Math.Max(0.148 * u, Math.Max(bodyNeed, Math.Max(t1.UnitsHeight(), t2.UnitsHeight()) * thT));
-            double bandBottom = zMax + 0.040 * u;
-            double bandTop = bandBottom + hBand;
-            double bodyBase = bandBottom + 0.030 * u + (hBand - bodyNeed) / 2.0;
+            ParticularsBlock part = MeasureParticulars(lines, num, um, tH);
 
-            double planGap = 0.085 * u;                               // Sheer plan 아래 ~ Half-breadth plan 위 (스테이션 번호 + 빨간 라벨 자리)
-            double yHB = zLow - planGap - halfBeam;                   // Half-breadth plan 중심선 (아래쪽)
+            var li = new SheetLayoutInput
+            {
+                XMin = xMin, XMax = xMax, ZLow = zLow, ZMax = zMax, HalfBeam = halfBeam, TH = tH,
+                LabW = labW, LabMargin = labMargin,
+                TableW1 = t1.UnitsWidth() * thTable, TableH1 = t1.UnitsHeight() * thTable,
+                TableW2 = t2.UnitsWidth() * thTable, TableH2 = t2.UnitsHeight() * thTable,
+                PartW = part.Width, PartH = part.Height,
+                TitleW = 0.17 * u, TitleH = 0.09 * u,
+                RevW = 0.15 * u, RevH = 0.03 * u
+            };
+            SheetLayout L = SheetLayout.Compute(li);
 
             // ---------- 선도 ----------
-            DrawLines(b, lines, data, num, fmt, u, tH, cyH, labW, zLow, bodyBase, cxBody, yHB, um);
+            DrawLines(b, lines, data, num, fmt, u, tH, cyH, labW, labMargin, zLow, L.BodyBase, L.CxBody, L.YHB, um);
 
-            // ---------- 표 (두 표의 위/아래 선을 맞춤) ----------
-            t1.Draw(b, tLeft, bandTop, thT, LayerGrid, LayerText, availL, hBand);
-            t2.Draw(b, rx, bandTop, thT, LayerGrid, LayerText, availR, hBand);
+            // ---------- 표 (세 블록의 위/아래 선을 맞춤, 표는 칸 높이에 맞춰 행 높이를 늘림) ----------
+            t1.Draw(b, L.Table1.L, L.Table1.T, thTable, LayerGrid, LayerText, L.Table1.Width, L.Table1.Height);
+            t2.Draw(b, L.Table2.L, L.Table2.T, thTable, LayerGrid, LayerText, L.Table2.Width, L.Table2.Height);
 
-            // ---------- 테두리 (이중) + 구역 표시 ----------
-            double lineEnd = yHB - 0.012 * u;                         // 스테이션선 아래 끝
-            double regionTop = lineEnd - 0.060 * u;                  // 도면과 제원 사이 마진
-            double regionBottom = regionTop - 0.176 * u;
-            double iL = xMin - labW - 0.025 * u, iR = xMax + labW + 0.025 * u;
-            double iB = regionBottom, iT = bandTop + 0.075 * u;
-            double fb = 0.011 * u;
-            DrawFrame(b, iL, iB, iR, iT, fb, tH);
+            // ---------- 테두리 (이중) + 구역 표시: 크기는 블록들에서 결정됨 ----------
+            DrawFrame(b, L.Frame.L, L.Frame.B, L.Frame.R, L.Frame.T, 2.2 * tH, tH);
 
-            // ---------- 제원 (하부 중앙) ----------
-            DrawParticulars(b, lines, num, (iL + iR) / 2.0, regionTop, u, um);
-
-            // ---------- 개정란 (오른쪽 위 모서리), 표제란 (오른쪽 아래 모서리) ----------
-            DrawRevisionBox(b, iR, iT, 0.150 * u, 0.0097 * u);
-            DrawTitleBlock(b, iR, iB, 0.17 * u, 0.09 * u, "Lines & Offset Plan", u * 0.0085);
+            // ---------- 제원 (하부 중앙), 개정란 (오른쪽 위 모서리), 표제란 (오른쪽 아래 모서리) ----------
+            DrawParticulars(b, part, L.Particulars);
+            DrawRevisionBox(b, L.Revision.R, L.Revision.T, L.Revision.Width, L.Revision.Height / 3.0);
+            DrawTitleBlock(b, L.TitleBlock.R, L.TitleBlock.B, L.TitleBlock.Width, L.TitleBlock.Height, "Lines & Offset Plan", 1.6 * tH);
 
             b.Save(path);
         }
@@ -1110,33 +1106,53 @@ namespace OffsetGenPlugin
         }
 
         // -------------------- 제원 (하부 중앙, 초록 큰 글씨) --------------------
-        // cx = 가운데 x, top = 제목 기준선 y. 사진: 제목(밑줄) + 항목 6줄, 값은 오른쪽 정렬, 단위 m
-        static void DrawParticulars(DxfBuilder b, LinesData d, StationNumbering num, double cx, double top, double u, double um)
+        class ParticularsBlock
         {
-            var rows = new List<string[]>();
-            double loa = (d.Bbox.Max.X - d.Bbox.Min.X) * um;
-            rows.Add(new[] { "LENGTH O.A", "approx. " + loa.ToString("0.00", Inv) });
+            public List<string[]> Rows;        // 항목, 값(m)
+            public double HHead, H, Pitch;     // 제목 글자 높이, 항목 글자 높이, 항목 줄 간격
+            public double Width, Height;
+        }
+
+        // 사진: 제목(밑줄) + 항목 6줄, 값은 오른쪽 정렬, 단위 m. 글자와 줄 간격은 넉넉하게
+        static ParticularsBlock MeasureParticulars(LinesData d, StationNumbering num, double um, double tH)
+        {
+            var pb = new ParticularsBlock { Rows = new List<string[]>() };
+            double u = d.Bbox.Max.X - d.Bbox.Min.X;
+            double loa = u * um;
+            pb.Rows.Add(new[] { "LENGTH O.A", "approx. " + loa.ToString("0.00", Inv) });
             if (num != null && num.Valid)
-                rows.Add(new[] { "LENGTH B.P", "approx. " + ((num.FpX - num.ApX) * um).ToString("0.00", Inv) });
+                pb.Rows.Add(new[] { "LENGTH B.P", "approx. " + ((num.FpX - num.ApX) * um).ToString("0.00", Inv) });
             double beam = 2.0 * Math.Max(Math.Abs(d.Bbox.Min.Y), Math.Abs(d.Bbox.Max.Y)) * um;
-            rows.Add(new[] { "BREADTH", beam.ToString("0.00", Inv) });
-            if (d.DepthM.HasValue) rows.Add(new[] { "DEPTH TO MAIN DK", d.DepthM.Value.ToString("0.00", Inv) });
-            if (d.UpperDepthM.HasValue) rows.Add(new[] { "DEPTH TO UPPER DK", d.UpperDepthM.Value.ToString("0.00", Inv) });
-            if (d.DraftM.HasValue) rows.Add(new[] { "DRAFT DESIGN", d.DraftM.Value.ToString("0.00", Inv) });
+            pb.Rows.Add(new[] { "BREADTH", beam.ToString("0.00", Inv) });
+            if (d.DepthM.HasValue) pb.Rows.Add(new[] { "DEPTH TO MAIN DK", d.DepthM.Value.ToString("0.00", Inv) });
+            if (d.UpperDepthM.HasValue) pb.Rows.Add(new[] { "DEPTH TO UPPER DK", d.UpperDepthM.Value.ToString("0.00", Inv) });
+            if (d.DraftM.HasValue) pb.Rows.Add(new[] { "DRAFT DESIGN", d.DraftM.Value.ToString("0.00", Inv) });
 
-            double hHead = 0.0135 * u, h = 0.0078 * u, pitch = 0.0125 * u;
-            double width = 0.205 * u;                                // 제목 폭 (사진 비율)
-            double valRight = 0.172 * u;
-            double ox = cx - width / 2.0;
+            pb.HHead = 3.0 * tH;
+            pb.H = 1.9 * tH;
+            pb.Pitch = 2.2 * pb.H;                                   // 항목 줄 간격: 글자 높이의 2.2배
+            int maxKey = 1, maxVal = 1;
+            foreach (var r in pb.Rows) { if (r[0].Length > maxKey) maxKey = r[0].Length; if (r[1].Length > maxVal) maxVal = r[1].Length; }
+            double headW = "PRINCIPAL PARTICULARS".Length * 0.82 * pb.HHead;
+            double rowsW = (maxKey + maxVal) * 0.85 * pb.H + 7.0 * pb.H;
+            pb.Width = Math.Max(headW, rowsW) * 1.05;
+            pb.Height = pb.HHead + 1.4 * pb.H + pb.Rows.Count * pb.Pitch;
+            return pb;
+        }
 
-            b.Text(LayerPart, ox, top, hHead, "PRINCIPAL PARTICULARS", 0);
-            b.Line(LayerPart, ox, top - 0.0035 * u, ox + width, top - 0.0035 * u);
-            for (int i = 0; i < rows.Count; i++)
+        // r = 제원 블록 자리. 제목은 맞춤(fit) 글자로 블록 폭을 정확히 채우고 밑줄도 같은 폭 -> 글꼴이 달라도 밑줄이 제목을 감쌈
+        static void DrawParticulars(DxfBuilder b, ParticularsBlock pb, RectD r)
+        {
+            double baseY = r.T - pb.HHead;                            // 제목 기준선
+            b.TextFit(LayerPart, r.L, r.R, baseY, pb.HHead, "PRINCIPAL PARTICULARS");
+            double ul = baseY - 0.4 * pb.HHead;
+            b.Line(LayerPart, r.L, ul, r.R, ul);
+            for (int i = 0; i < pb.Rows.Count; i++)
             {
-                double ty = top - 0.0155 * u - i * pitch;
-                b.Text(LayerPart, ox, ty, h, rows[i][0], 3);
-                b.Text(LayerPart, ox + valRight, ty, h, rows[i][1], 2);
-                b.Text(LayerPart, ox + valRight + 0.007 * u, ty, h, "m", 3);
+                double ty = ul - 1.4 * pb.H - i * pb.Pitch;
+                b.Text(LayerPart, r.L, ty, pb.H, pb.Rows[i][0], 3);                       // 항목: 블록 왼쪽 끝
+                b.Text(LayerPart, r.R - 3.2 * pb.H, ty, pb.H, pb.Rows[i][1], 2);          // 값: 오른쪽 정렬
+                b.Text(LayerPart, r.R - 2.2 * pb.H, ty, pb.H, "m", 3);
             }
         }
 
@@ -1309,7 +1325,7 @@ namespace OffsetGenPlugin
 
         // -------------------- 선도 --------------------
         static void DrawLines(DxfBuilder b, LinesData d, OffsetData od, StationNumbering num, string fmt,
-                              double u, double tH, double cyH, double labW, double zLow,
+                              double u, double tH, double cyH, double labW, double labMargin, double zLow,
                               double bodyBase, double cxBody, double yHB, double um)
         {
             double xMin = d.Bbox.Min.X, xMax = d.Bbox.Max.X;
@@ -1324,7 +1340,7 @@ namespace OffsetGenPlugin
             bool numbered = num != null && num.Valid;
             double midX = numbered ? (num.ApX + num.FpX) / 2.0 : (xMin + xMax) / 2.0;   // midship (스테이션 10)
             double eps = u * 1e-6;
-            double lineBottom = yHB - 0.012 * u;
+            double lineBottom = yHB - 2.5 * tH;
 
             // 숫자 라벨 (미터)
             var wlM = od.WaterlinesM;
@@ -1358,10 +1374,10 @@ namespace OffsetGenPlugin
             {
                 double z = wlPos[k];
                 string t = OffsetTableFactory.Head(wlM[order[k]]) + " W.L.";
-                b.Text(LinesLabel, xMin - 0.4 * tH, z, cyH, t, 2);              // 왼쪽
-                b.Text(LinesLabel, xMax + 0.4 * tH, z, cyH, t, 3);              // 오른쪽
-                b.Text(LinesLabel, bodyL - 0.4 * tH, z + dyBody, cyH, t, 2);    // Body plan 왼쪽
-                b.Text(LinesLabel, bodyR + 0.4 * tH, z + dyBody, cyH, t, 3);    // Body plan 오른쪽
+                b.Text(LinesLabel, xMin - labMargin, z, cyH, t, 2);              // 왼쪽
+                b.Text(LinesLabel, xMax + labMargin, z, cyH, t, 3);              // 오른쪽
+                b.Text(LinesLabel, bodyL - labMargin, z + dyBody, cyH, t, 2);    // Body plan 왼쪽
+                b.Text(LinesLabel, bodyR + labMargin, z + dyBody, cyH, t, 3);    // Body plan 오른쪽
             }
 
             // ---- 버톡: 격자 (Half-breadth, Body plan) + 시안 라벨 (좌/우) ----
@@ -1380,17 +1396,17 @@ namespace OffsetGenPlugin
             {
                 double yb = btPos[k];
                 string t = OffsetTableFactory.Head(btM[bo[k]]) + " B.T.";
-                b.Text(LinesLabel, xMin - 0.4 * tH, yHB + yb, cyH, t, 2);
-                b.Text(LinesLabel, xMax + 0.4 * tH, yHB + yb, cyH, t, 3);
+                b.Text(LinesLabel, xMin - labMargin, yHB + yb, cyH, t, 2);
+                b.Text(LinesLabel, xMax + labMargin, yHB + yb, cyH, t, 3);
             }
-            b.Text(LinesLabel, xMin - 0.4 * tH, yHB, cyH, "C.L.", 2);
-            b.Text(LinesLabel, xMax + 0.4 * tH, yHB, cyH, "C.L.", 3);
+            b.Text(LinesLabel, xMin - labMargin, yHB, cyH, "C.L.", 2);
+            b.Text(LinesLabel, xMax + labMargin, yHB, cyH, "C.L.", 3);
 
             // ---- 스테이션선 + 번호 (두 평면 사이, 번호 자리에서 선을 끊음) ----
             var sorted = new List<double>(od.StationX);
             sorted.Sort();
             var rowEnd = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
-            double labelY0 = zLow - 0.020 * u;
+            double labelY0 = zLow - 3.6 * tH;
             foreach (double x in sorted)
             {
                 string label = numbered ? num.Label(x) : x.ToString(fmt, Inv);
@@ -1405,7 +1421,7 @@ namespace OffsetGenPlugin
                 else
                 {
                     rowEnd[rowIdx] = x + wLabel / 2.0;
-                    double ly = labelY0 - rowIdx * 1.6 * tH;
+                    double ly = labelY0 - rowIdx * 2.0 * tH;
                     b.Text(LayerText, x, ly, tH, label, 1);
                     b.Line(LinesGrid, x, zMax, x, ly + 0.85 * tH);
                     b.Line(LinesGrid, x, ly - 0.85 * tH, x, lineBottom);
@@ -1413,7 +1429,7 @@ namespace OffsetGenPlugin
             }
 
             // ---- Half-breadth plan 아래: 스테이션 번호 (작은 흰 글자, 겹치면 줄을 바꿈) ----
-            double hS = 0.7 * tH;
+            double hS = 0.9 * tH;                                       // 읽히는 크기 (별도 레이어: LINES_STATION_TEXT_LOWER)
             var rowEnd2 = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
             foreach (double x in sorted)
             {
@@ -1423,7 +1439,7 @@ namespace OffsetGenPlugin
                     if (x - wLabel / 2.0 >= rowEnd2[r])
                     {
                         rowEnd2[r] = x + wLabel / 2.0;
-                        b.Text(LayerText, x, lineBottom - hS * (0.9 + 1.5 * r), hS, label, 1);
+                        b.Text(StationLower, x, lineBottom - hS * (0.9 + 1.9 * r), hS, label, 1);
                         break;
                     }
             }
@@ -1499,7 +1515,7 @@ namespace OffsetGenPlugin
             }
 
             // ---- 빨간 라벨 (별도 레이어 LINES_CALLOUT_TEXT / LINES_CALLOUT_LEADER) ----
-            double hC = 0.8 * tH;
+            double hC = tH;                                           // 읽히는 크기
             var stX = od.StationX;
 
             // Sheer plan: 버톡 곡선마다 이름 (곡선이 끝나는 쪽의 스테이션선 위치, 지시선으로 연결)
@@ -1512,7 +1528,9 @@ namespace OffsetGenPlugin
                     P2 a = PickEnd(pts, xMin, xMax, u);
                     sheerItems.Add(new Callout { Ax = a.X, Ay = a.Y, Name = OffsetTableFactory.Head(bs.Y * um) + " B.T." });
                 }
-            PlaceCallouts(b, sheerItems, stX, hC, new[] { zMax + 0.014 * u, zLow - 0.052 * u }, xMin - 0.5 * labW, xMax + 0.9 * labW);
+            PlaceCallouts(b, sheerItems, stX, hC,
+                          new[] { zMax + 3.0 * tH, zLow - 11.0 * tH, zMax + 5.6 * tH, zLow - 13.6 * tH },
+                          xMin - labMargin - labW, xMax + labMargin + labW);
 
             // Half-breadth plan: 수선 곡선마다 이름
             var planItems = new List<Callout>();
@@ -1527,10 +1545,11 @@ namespace OffsetGenPlugin
                 planItems.Add(new Callout { Ax = a.X, Ay = a.Y, Name = OffsetTableFactory.Head(ws.Z * um) + " W.L." });
             }
             double planTop = yHB + halfBeam;
-            PlaceCallouts(b, planItems, stX, hC, new[] { planTop + 0.010 * u, planTop + 0.020 * u }, xMin - 0.5 * labW, xMax + 0.9 * labW);
+            PlaceCallouts(b, planItems, stX, hC, new[] { planTop + 3.0 * tH, planTop + 5.6 * tH },
+                          xMin - labMargin - labW, xMax + labMargin + labW);
 
             // Body plan: 스테이션 곡선마다 스테이션 번호 (곡선 위쪽 끝, 겹치면 생략)
-            double hB = 0.6 * tH;
+            double hB = 0.9 * tH;
             var leftTops = new List<P2>(); var rightTops = new List<P2>();
             var leftNames = new List<string>(); var rightNames = new List<string>();
             foreach (var ss in d.Stations)
@@ -1549,15 +1568,15 @@ namespace OffsetGenPlugin
             PlaceTopLabels(b, rightTops, rightNames, hB);
 
             // ---- 시안 라벨 열 아래 끝의 "L" 꺾쇠 (기선 / 중심선 표시) ----
-            LBracket(b, xMin - 0.4 * tH, 0.0, -1, labW, cyH);
-            LBracket(b, xMax + 0.4 * tH, 0.0, +1, labW, cyH);
-            LBracket(b, xMin - 0.4 * tH, yHB, -1, labW, cyH);
-            LBracket(b, xMax + 0.4 * tH, yHB, +1, labW, cyH);
-            LBracket(b, bodyL - 0.4 * tH, bodyBase, -1, labW, cyH);
-            LBracket(b, bodyR + 0.4 * tH, bodyBase, +1, labW, cyH);
+            LBracket(b, xMin - labMargin, 0.0, -1, labW, cyH);
+            LBracket(b, xMax + labMargin, 0.0, +1, labW, cyH);
+            LBracket(b, xMin - labMargin, yHB, -1, labW, cyH);
+            LBracket(b, xMax + labMargin, yHB, +1, labW, cyH);
+            LBracket(b, bodyL - labMargin, bodyBase, -1, labW, cyH);
+            LBracket(b, bodyR + labMargin, bodyBase, +1, labW, cyH);
 
             // ---- Body plan 제목 (아래 가운데, 시안 밑줄) ----
-            UnderlinedTitle(b, cxBody, bodyBase - 0.016 * u, tH * 1.1, "BODY PLAN");
+            UnderlinedTitle(b, cxBody, bodyBase - 3.4 * tH, tH * 1.3, "BODY PLAN");
         }
     }
 
