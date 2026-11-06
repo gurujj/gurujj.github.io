@@ -1,5 +1,18 @@
 Made by Jejun Park, Ph. D.
 
+JPOffsets 1.2.0-alpha.2
+
+- 굵고 짧은 빨간 선(LINES_MARK, 탄젠트 점) 모두 제거. 사진의 빨간 표시는 글자였음
+- 빨간 라벨 추가 (별도 레이어 LINES_CALLOUT_TEXT = 글자, LINES_CALLOUT_LEADER = 주황 지시선 -> 레이어만 끄거나 지우면 한 번에 사라짐)
+  * Sheer plan: 버톡 곡선마다 "3.0 B.T." (곡선이 끝나는 쪽 스테이션선 위치, 위/아래 두 줄에 번갈아 배치, 지시선으로 연결)
+  * Half-breadth plan: 수선 곡선마다 "3.0 W.L." (평면도 위쪽 두 줄)
+  * Body plan: 스테이션 곡선 위쪽 끝에 스테이션 번호 (겹치면 생략)
+  * 한 줄에 라벨이 몰려 도면 오른쪽 밖으로 나가면 줄 전체를 왼쪽으로 당김
+- 시안 라벨 열 아래 끝에 "L" 꺾쇠 (Sheer 좌/우, Half-breadth 좌/우, Body plan 좌/우)
+- Half-breadth plan 아래 스테이션선 끝의 흰 사각형 -> 스테이션 번호 작은 흰 글자 (OFFSET_TEXT, 겹치면 줄 바꿈)
+- 간격: 왼쪽 표 | Body plan | 오른쪽 표 사이 0.03u (이전 0.015u), 시안 라벨 폭 여유 확대, Sheer~Half-breadth 간격 0.085u,
+  Half-breadth plan 아래 ~ 제원 마진 0.06u (이전 0.03u)
+
 JPOffsets 1.2.0-alpha.1  (OffsetGen2 1.1.0 에서 이름 변경: 명령어 JPOffsets, 플러그인 JPOffsets.rhp, 솔루션 JPOffsets.sln)
 
 [도면을 참고 도면(사진)과 같은 형식으로 변경]
