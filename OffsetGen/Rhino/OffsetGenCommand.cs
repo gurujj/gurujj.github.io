@@ -25,6 +25,13 @@ namespace OffsetGenPlugin
 
         public override string EnglishName { get { return "OffsetGen"; } }
 
+        // RhinoApp.WriteLine 은 인수 개수별 오버로드가 제한적이므로 항상 문자열 하나로 만들어 보냄
+        static void Log(string format, params object[] args)
+        {
+            string msg = (args == null || args.Length == 0) ? format : string.Format(format, args);
+            RhinoApp.WriteLine(msg);
+        }
+
         protected override Result RunCommand(RhinoDoc doc, RunMode mode)
         {
             // 1) 선체 선택 (서피스 / 폴리서피스, 여러 개 가능)
@@ -45,7 +52,7 @@ namespace OffsetGenPlugin
             }
             if (breps.Count == 0 || !bbox.IsValid)
             {
-                RhinoApp.WriteLine("선택한 객체에서 Brep을 얻지 못했습니다.");
+                Log("선택한 객체에서 Brep을 얻지 못했습니다.");
                 return Result.Failure;
             }
 
@@ -117,10 +124,10 @@ namespace OffsetGenPlugin
             // 단위 변환: 입력/계산은 현재 단위, 파일 출력만 쓰기 단위로 환산 (m -> mm 이면 x1000)
             string unitName = dlg.ToUnit;
             double sc = OffsetGenDialog.UnitMeters(dlg.FromUnit) / OffsetGenDialog.UnitMeters(dlg.ToUnit);
-            RhinoApp.WriteLine("단위 변환: {0} -> {1} (배율 x{2})", dlg.FromUnit, dlg.ToUnit, sc);
+            Log("단위 변환: {0} -> {1} (배율 x{2})", dlg.FromUnit, dlg.ToUnit, sc);
             string docUnit = OffsetGenDialog.UnitFromRhino(doc.ModelUnitSystem.ToString());
             if (docUnit != null && docUnit != dlg.FromUnit)
-                RhinoApp.WriteLine("주의: 선택한 현재 단위({0})가 라이노 모델 단위({1})와 다릅니다.", dlg.FromUnit, docUnit);
+                Log("주의: 선택한 현재 단위({0})가 라이노 모델 단위({1})와 다릅니다.", dlg.FromUnit, docUnit);
 
             var oStations = ScaleList(dlg.Stations, sc);
             var oWaterlines = ScaleList(dlg.Waterlines, sc);
@@ -135,7 +142,7 @@ namespace OffsetGenPlugin
                 {
                     string csvPath = basePath + ".csv";
                     CsvWriter.Write(csvPath, oStations, oWaterlines, oWlTable, oButtocks, oBtTable, fmt, unitName);
-                    RhinoApp.WriteLine("CSV 저장: {0}", csvPath);
+                    Log("CSV 저장: {0}", csvPath);
                 }
                 if (dlg.WriteDxf)
                 {
@@ -174,12 +181,12 @@ namespace OffsetGenPlugin
                     string dxfPath = basePath + ".dxf";
                     DxfWriter.Write(dxfPath, oStations, oWaterlines, oWlTable, oButtocks, oBtTable,
                                     fmt, dlg.TextHeight, num, lines, unitName);
-                    RhinoApp.WriteLine("DXF 저장{0}: {1}", dlg.IncludeLines ? " (선도 포함)" : "", dxfPath);
+                    Log("DXF 저장{0}: {1}", dlg.IncludeLines ? " (선도 포함)" : "", dxfPath);
                 }
             }
             catch (IOException ex)
             {
-                RhinoApp.WriteLine("파일 저장 실패 (다른 프로그램에서 열려 있는지 확인): " + ex.Message);
+                Log("파일 저장 실패 (다른 프로그램에서 열려 있는지 확인): " + ex.Message);
                 return Result.Failure;
             }
 
@@ -205,7 +212,7 @@ namespace OffsetGenPlugin
 
                 if (sections.Count == 0)
                 {
-                    RhinoApp.WriteLine("x = {0}: 단면 없음 (빈 열로 출력)", x);
+                    Log("x = {0}: 단면 없음 (빈 열로 출력)", x);
                     continue;
                 }
                 stationSections.Add(new StationSection { X = x, Curves = sections });
@@ -264,14 +271,14 @@ namespace OffsetGenPlugin
             double halfBeam = Math.Max(Math.Abs(bbox.Min.Y), Math.Abs(bbox.Max.Y));
             int nBt = dlg.Buttocks.Count;
             int nSta = dlg.Stations.Count;
-            RhinoApp.WriteLine("버톡 라인 추적: {0}개", nBt);
+            Log("버톡 라인 추적: {0}개", nBt);
 
             for (int k = 0; k < nBt; k++)
             {
                 double bv = dlg.Buttocks[k];
                 if (bv >= halfBeam - tol * 5.0)
                 {
-                    RhinoApp.WriteLine("  버톡 y = {0}: 최대 폭({1}) 이상이라 라인을 그리지 않음 (표 높이만 계산)", bv, halfBeam);
+                    Log("  버톡 y = {0}: 최대 폭({1}) 이상이라 라인을 그리지 않음 (표 높이만 계산)", bv, halfBeam);
                     continue;
                 }
 
@@ -280,7 +287,7 @@ namespace OffsetGenPlugin
 
                 var r = ButtockTracer.Trace(breps, bv, ySign, tol, bbox, dlg.Stations, tableZ, dlg.SmoothButtocks);
                 string check = r.ChecksTotal > 0 ? string.Format(", 표 값 일치 {0}/{1}", r.ChecksOk, r.ChecksTotal) : "";
-                RhinoApp.WriteLine("  버톡 y = {0}: {1}, 조각 {2}개{3}{4}", bv,
+                Log("  버톡 y = {0}: {1}, 조각 {2}개{3}{4}", bv,
                                    r.Method == "exact" ? "정확 교선" : (r.Method == "sampled" ? "샘플링 대체" : "없음"),
                                    r.Lines.Count, check, r.Note.Length > 0 ? " [" + r.Note + "]" : "");
 
@@ -337,7 +344,7 @@ namespace OffsetGenPlugin
                 }
 
             doc.Views.Redraw();
-            RhinoApp.WriteLine("커브 추가: 스테이션 {0}개, 워터라인 {1}개, 버톡 {2}개", staCount, wlCount, btCount);
+            Log("커브 추가: 스테이션 {0}개, 워터라인 {1}개, 버톡 {2}개", staCount, wlCount, btCount);
         }
 
         static List<double> ScaleList(List<double> src, double sc)
