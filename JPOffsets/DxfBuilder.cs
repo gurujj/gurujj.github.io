@@ -70,6 +70,17 @@ namespace OffsetGenPlugin
             }
         }
 
+        // 맞춤(fit) 정렬 글자: 글꼴이 달라도 x1 ~ x2 사이를 정확히 채움 (밑줄 길이와 맞추기 위해)
+        public void TextFit(string layer, double x1, double x2, double y, double h, string text)
+        {
+            G(ents, 0, "TEXT"); G(ents, 8, layer);
+            G(ents, 10, x1); G(ents, 20, y); G(ents, 30, 0.0);
+            G(ents, 40, h);
+            G(ents, 1, Ascii(text));
+            G(ents, 72, "5");
+            G(ents, 11, x2); G(ents, 21, y); G(ents, 31, 0.0);
+        }
+
         // R12 ASCII에서 깨지는 문자는 ?로 바꿈
         static string Ascii(string s)
         {

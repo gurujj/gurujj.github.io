@@ -87,7 +87,7 @@ namespace OffsetGenPlugin
         public List<List<string[]>> Rows = new List<List<string[]>>();  // 행 -> 열 -> 줄들
 
         const double CharW = 0.9;     // 글자 폭 / 글자 높이 (여유 포함)
-        const double HeadLine = 1.35, RowLine = 1.3;
+        const double HeadLine = 1.65, RowLine = 1.9;   // 줄 간격 (글자 높이 배수): 값이 쌓여도 구분되게 넉넉히
         const double TitleUnits = 2.6;   // 제목 행 높이 (표 안, 박스로 감쌈)
 
         double[] ColUnits()
@@ -109,14 +109,14 @@ namespace OffsetGenPlugin
         {
             int m = 1;
             foreach (var h in Headers) if (h.Length > m) m = h.Length;
-            return m * HeadLine + 1.0;
+            return m * HeadLine + 1.3;
         }
 
         double RowUnits(List<string[]> row)
         {
             int m = 1;
             foreach (var c in row) if (c.Length > m) m = c.Length;
-            return m * RowLine + 0.7;
+            return m == 1 ? 2.8 : m * RowLine + 0.8;      // 한 줄 행은 2.8, 값이 여러 개면 줄 수에 비례
         }
 
         // 글자 높이 1 기준 크기 (실제 크기 = 값 x 글자 높이)
@@ -214,6 +214,8 @@ namespace OffsetGenPlugin
                 if (t == "-0" || t == "-0.0" || t == "-0.00" || t == "-0.000") t = t.Substring(1);
                 if (r.Count == 0 || r[r.Count - 1] != t) r.Add(t);
             }
+            // 여러 값이 쌓이면 마지막을 뺀 각 값 뒤에 쉼표 (3164, / 12886, / 14486)
+            for (int k = 0; k < r.Count - 1; k++) r[k] = r[k] + ",";
             return r.ToArray();
         }
 
@@ -289,7 +291,13 @@ namespace OffsetGenPlugin
             foreach (var row in t.Rows)
             {
                 var cells = new List<string>();
-                foreach (var c in row) cells.Add(string.Join(";", c));
+                foreach (var c in row)
+                {
+                    // CSV 에서는 쉼표가 열 구분자이므로 DXF 용 쉼표를 떼고 ; 로 구분
+                    var parts = new List<string>();
+                    foreach (var line in c) parts.Add(line.TrimEnd(','));
+                    cells.Add(string.Join(";", parts.ToArray()));
+                }
                 sb.AppendLine(string.Join(",", cells.ToArray()));
             }
         }

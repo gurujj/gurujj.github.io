@@ -36,11 +36,13 @@
     <Compile Include="PolyToolsTests.cs" />
     <Compile Include="StationNumberingTests.cs" />
     <Compile Include="OffsetTablesTests.cs" />
+    <Compile Include="SheetLayoutTests.cs" />
     <Compile Include="..\JPOffsets\PolyTools.cs"><Link>PolyTools.cs</Link></Compile>
     <Compile Include="..\JPOffsets\AdaptiveSampler.cs"><Link>AdaptiveSampler.cs</Link></Compile>
     <Compile Include="..\JPOffsets\StationNumbering.cs"><Link>StationNumbering.cs</Link></Compile>
     <Compile Include="..\JPOffsets\DxfBuilder.cs"><Link>DxfBuilder.cs</Link></Compile>
     <Compile Include="..\JPOffsets\OffsetTables.cs"><Link>OffsetTables.cs</Link></Compile>
+    <Compile Include="..\JPOffsets\SheetLayout.cs"><Link>SheetLayout.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

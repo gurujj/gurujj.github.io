@@ -8,6 +8,7 @@ public static class Program
         r |= PolyToolsTests.Run();
         r |= StationNumberingTests.Run();
         r |= OffsetTablesTests.Run();
+        r |= SheetLayoutTests.Run();
         return r == 0 ? 0 : 1;
     }
 }

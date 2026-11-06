@@ -32,7 +32,7 @@ public static class OffsetTablesTests
         // 높이 표: 라벨 | CENTER CONTOUR | B.T. x2 (0 제외) | SIDE TANGENT | 라벨 = 6열
         Check(t2.Headers.Count == 6 && t2.Headers[1][0] == "CENTER" && t2.Headers[2][0] == "0.5" && t2.Headers[2][1] == "B.T.", "base-line table columns");
         // 복수 교점은 한 칸에 오름차순으로 쌓음
-        Check(t2.Rows[0][1].Length == 3 && t2.Rows[0][1][0] == "727" && t2.Rows[0][1][2] == "17042", "center contour stacked values");
+        Check(t2.Rows[0][1].Length == 3 && t2.Rows[0][1][0] == "727," && t2.Rows[0][1][1] == "7496," && t2.Rows[0][1][2] == "17042", "stacked values: comma after all but last");
         Check(t1.Rows[1][3].Length == 2 && t1.Rows[1][3][1] == "3164", "half-breadth stacked values");
         // 없는 칸: 반폭 표 '-', 높이 표 '0'
         Check(t1.Rows[0][2][0] == "-" && t2.Rows[0][2][0] == "0", "empty cells: '-' vs '0'");

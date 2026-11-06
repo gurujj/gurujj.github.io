@@ -48,6 +48,7 @@
     <Compile Include="JPOffsets.cs" />
     <Compile Include="OffsetTables.cs" />
     <Compile Include="PolyTools.cs" />
+    <Compile Include="SheetLayout.cs" />
     <Compile Include="StationNumbering.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
