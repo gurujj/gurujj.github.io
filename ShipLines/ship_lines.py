@@ -364,8 +364,7 @@ def build_sheet(hb_rows, ht_rows):
         cur = buttock_curve(b)
         sh.poly("BUTTOCK", cur)
         if cur:
-            k = min(range(len(cur)), key=lambda i: abs(cur[i][0] - 0.5 * L))
-            sh.text(cur[k][0], cur[k][1] + 0.6, tx, "BUTTOCK %g" % b, "m", "BUTTOCK")
+            sh.text(cur[-1][0] - 0.6, cur[-1][1] - 0.9, tx, "BUTTOCK %g" % b, "r", "BUTTOCK")
     sh.poly("PROFILE", profile_outline())
     sh.line("PROFILE", 0, z_keel(0), 0, z_deck(0))                  # 트랜섬
 
