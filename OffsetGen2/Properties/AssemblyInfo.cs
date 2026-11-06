@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("made by Jejun Park, Ph. D.")]
 [assembly: AssemblyVersion("1.1.0.0")]
 [assembly: AssemblyFileVersion("1.1.0.0")]
-[assembly: AssemblyInformationalVersion("1.1.0-alpha.3")]
+[assembly: AssemblyInformationalVersion("1.1.0-alpha.4")]
 [assembly: ComVisible(false)]
 
 // 플러그인 GUID (명령 GUID와 다름)

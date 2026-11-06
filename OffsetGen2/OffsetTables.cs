@@ -83,8 +83,8 @@ namespace OffsetGenPlugin
         public List<string[]> Headers = new List<string[]>();          // 열마다 머리글 줄들
         public List<List<string[]>> Rows = new List<List<string[]>>();  // 행 -> 열 -> 줄들
 
-        const double CharW = 0.85;    // 글자 폭 / 글자 높이 (여유 포함)
-        const double HeadLine = 1.5, RowLine = 1.6;
+        const double CharW = 0.9;     // 글자 폭 / 글자 높이 (여유 포함)
+        const double HeadLine = 1.35, RowLine = 1.3;
 
         double[] ColUnits()
         {
@@ -112,7 +112,7 @@ namespace OffsetGenPlugin
         {
             int m = 1;
             foreach (var c in row) if (c.Length > m) m = c.Length;
-            return m * RowLine + 0.8;
+            return m * RowLine + 0.7;
         }
 
         // 글자 높이 1 기준 크기 (실제 크기 = 값 x 글자 높이)
