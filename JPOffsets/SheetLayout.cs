@@ -64,20 +64,22 @@ namespace OffsetGenPlugin
             double hullH = i.ZMax - i.ZLow;
             double hullW = u + 2.0 * (i.LabMargin + i.LabW);
 
-            // 위쪽 띠 높이는 표(글자 크기 고정)가 정하고, Body plan 은 그 높이를 채우도록 확대 (최소 1배, 최대 3배)
+            // 왼쪽 표, Body plan, 오른쪽 표는 폭이 같도록: 가장 넓은 표(또는 Body plan 최소폭)를 기준 폭 W 로 삼고
+            // 표는 열 폭을 늘려 W 에 맞추고, Body plan 은 W 에 맞게 확대 (1~4배)
+            double bodyLabW = 2.0 * (i.LabMargin + i.LabW);
+            double W = Math.Max(Math.Max(i.TableW1, i.TableW2), 2.0 * i.HalfBeam + bodyLabW);
+            s.BodyScale = Math.Max(1.0, Math.Min(4.0, (W - bodyLabW) / (2.0 * i.HalfBeam)));
             double bodyPad = 12.0 * tH;                                  // 아래 제목 + 위 여백
-            double bandH = Math.Max(hullH + bodyPad, Math.Max(i.TableH1, i.TableH2));
-            s.BodyScale = Math.Max(1.0, Math.Min(3.0, (bandH - bodyPad) / hullH));
-            double bodyOuterW = 2.0 * i.HalfBeam * s.BodyScale + 2.0 * (i.LabMargin + i.LabW);
-            double wTop = i.TableW1 + s.Gap + bodyOuterW + s.Gap + i.TableW2;
+            double bandH = Math.Max(hullH * s.BodyScale + bodyPad, Math.Max(i.TableH1, i.TableH2));   // 세 블록의 높이도 같음
+            double wTop = 3.0 * W + 2.0 * s.Gap;
             double contentW = Math.Max(wTop, hullW);
             double x0 = cx0 - wTop / 2.0;
 
             s.BandBottom = i.ZMax + 12.0 * tH;                         // Sheer plan 위 빨간 라벨 줄 자리
             s.BandTop = s.BandBottom + bandH;
-            s.Table1 = new RectD(x0, s.BandBottom, x0 + i.TableW1, s.BandTop);
-            s.Body = new RectD(s.Table1.R + s.Gap, s.BandBottom, s.Table1.R + s.Gap + bodyOuterW, s.BandTop);
-            s.Table2 = new RectD(s.Body.R + s.Gap, s.BandBottom, s.Body.R + s.Gap + i.TableW2, s.BandTop);
+            s.Table1 = new RectD(x0, s.BandBottom, x0 + W, s.BandTop);
+            s.Body = new RectD(s.Table1.R + s.Gap, s.BandBottom, s.Table1.R + s.Gap + W, s.BandTop);
+            s.Table2 = new RectD(s.Body.R + s.Gap, s.BandBottom, s.Body.R + s.Gap + W, s.BandTop);
             s.CxBody = (s.Body.L + s.Body.R) / 2.0;
             double bodyH = hullH * s.BodyScale;
             s.BodyBase = s.BandBottom + 5.5 * tH + (bandH - bodyPad - bodyH) / 2.0;

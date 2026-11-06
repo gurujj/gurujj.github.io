@@ -64,7 +64,7 @@ namespace OffsetGenPlugin
     {
         public const string Author = "Jejun Park, Ph. D.";
         public const string Credit = "made by Jejun Park, Ph. D.";
-        public const string Version = "1.2.0-alpha.4";
+        public const string Version = "1.2.0-alpha.5";
     }
 
     // ---------------------------------------------------------------
@@ -1022,7 +1022,7 @@ namespace OffsetGenPlugin
             double labW = 10.5 * cyH + 0.3 * tH;                     // "23.0 W.L." 폭 (여유 포함)
             double labMargin = 1.5 * tH;                              // 도면과 시안 라벨 사이 마진
 
-            double thTable = 0.8 * tH;                                // 표 글자: 폭에 맞춰 줄이지 않고 고정 (도면이 표 크기에 맞춰 커짐)
+            double thTable = 0.7 * tH;                                // 표 글자: 폭에 맞춰 줄이지 않고 고정 (도면이 표 크기에 맞춰 커짐)
 
             ParticularsBlock part = MeasureParticulars(lines, num, um, tH);
 

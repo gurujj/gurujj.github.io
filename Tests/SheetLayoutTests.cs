@@ -28,6 +28,9 @@ public static class SheetLayoutTests
             var i = Input(w * 220000, w * 0.8 * 220000, 0.25 * 220000);
             var s = SheetLayout.Compute(i);
             string tag = " (table width " + w + "u)";
+            Check(Math.Abs(s.Table1.Width - s.Body.Width) < 1e-6 && Math.Abs(s.Body.Width - s.Table2.Width) < 1e-6, "table, body plan and table have the same width" + tag);
+            Check(Math.Abs(s.Table1.Height - s.Body.Height) < 1e-6 && Math.Abs(s.Body.Height - s.Table2.Height) < 1e-6, "same height" + tag);
+            Check(s.Table1.Width >= i.TableW1 - 1e-6 && s.Table2.Width >= i.TableW2 - 1e-6, "tables never narrower than their text needs" + tag);
             Check(!s.Table1.Intersects(s.Body, s.Gap * 0.99), "table1 and body keep the margin" + tag);
             Check(!s.Body.Intersects(s.Table2, s.Gap * 0.99), "body and table2 keep the margin" + tag);
             Check(!s.Table1.Intersects(s.Table2, s.Gap), "tables keep the margin" + tag);
@@ -45,7 +48,7 @@ public static class SheetLayoutTests
             double top = s.Table2.R - s.Table1.L;
             Check(s.Frame.Width >= top && s.Frame.Width >= 220000, "frame is at least as wide as the widest block" + tag);
             // Body plan 은 위쪽 띠 높이를 채우도록 확대 (1~3배), 상자 안에 들어옴
-            Check(s.BodyScale >= 1.0 && s.BodyScale <= 3.0 + 1e-9, "body scale within 1..3" + tag);
+            Check(s.BodyScale >= 1.0 && s.BodyScale <= 4.0 + 1e-9, "body scale within 1..4" + tag);
             double bodyTop = s.BodyBase + (i.ZMax - i.ZLow) * s.BodyScale;
             Check(s.BodyBase >= s.Body.B && bodyTop <= s.Body.T, "scaled body plan inside its box" + tag);
             double halfW = i.HalfBeam * s.BodyScale;
