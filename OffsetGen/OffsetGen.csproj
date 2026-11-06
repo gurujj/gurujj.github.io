@@ -43,6 +43,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Core\AdaptiveSampler.cs" />
+    <Compile Include="Core\AutoDefaults.cs" />
     <Compile Include="Core\CloudTracer.cs" />
     <Compile Include="Core\CsvWriter.cs" />
     <Compile Include="Core\DxfBuilder.cs" />

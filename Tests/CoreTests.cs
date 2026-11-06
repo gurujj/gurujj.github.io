@@ -23,6 +23,7 @@ public static class CoreTests
         TestDistance();
         TestSamplerBulb();
         TestCloud();
+        TestDefaults();
         TestCsv();
         TestDxf();
         Console.WriteLine("PASS {0}, FAIL {1}", pass, fail);
@@ -182,6 +183,27 @@ public static class CoreTests
         for (int i = 0; i < curve.Count; i += 37)
             worst = Math.Max(worst, PolyTools.DistanceXZ(pl, curve[i].X, curve[i].Y));
         Check(worst < 0.3, "chain covers the whole curve (worst gap " + worst.ToString("0.00", CultureInfo.InvariantCulture) + ")");
+    }
+
+
+    static void TestDefaults()
+    {
+        // 미터 모델: 길이 170, 높이 0~23, 반폭 14
+        var d = AutoDefaults.Compute(-2, 168, 0, 23, 14);
+        Check(d.Ap == "-2" && d.Fp == "168" && d.Spacing == "8.5", "defaults x range");
+        Check(d.WlStart == "0" && d.WlStep == "1" && d.WlEnd == "23", "defaults WL meters (" + d.WlStart + "," + d.WlEnd + "," + d.WlStep + ")");
+        Check(d.BtStep == "1" && d.BtEnd == "13", "defaults BT (" + d.BtEnd + ")");
+        // mm 모델: 같은 선체를 mm로 -> 워터라인이 mm 단위로 채워져 "바닥에 몰리지" 않음
+        var m = AutoDefaults.Compute(-2000, 168000, 0, 23000, 14000);
+        Check(m.WlStep == "1000" && m.WlEnd == "23000" && m.BtEnd == "13000", "defaults WL mm (" + m.WlEnd + ")");
+        Check(Near(AutoDefaults.NiceStep(23, 20), 1.0, 1e-9), "nice step 23/20");
+        Check(Near(AutoDefaults.NiceStep(9, 20), 0.5, 1e-9), "nice step 9/20");
+
+        var kv = new Dictionary<string, string>();
+        kv["a"] = "x\ty\nz\\w"; kv["b"] = "";
+        var back = KeyValueCodec.Parse(KeyValueCodec.Serialize(kv));
+        Check(back.Count == 2 && back["a"] == "x\ty\nz\\w" && back["b"] == "", "codec roundtrip");
+        Check(KeyValueCodec.Signature(0, 200, 0, 23, 14) == "0;200;0;23;14", "signature");
     }
 
     static void TestCsv()

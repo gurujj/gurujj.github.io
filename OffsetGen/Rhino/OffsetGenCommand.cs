@@ -57,8 +57,16 @@ namespace OffsetGenPlugin
             }
 
             // 2) 입력 창
-            var dlg = new OffsetGenDialog(doc.ModelUnitSystem.ToString());
+            string saved = "";
+            var plug = OffsetGenPlugIn.Instance;
+            try { if (plug != null) saved = plug.Settings.GetString("LastInput", ""); }
+            catch (Exception) { saved = ""; }
+
+            var dlg = new OffsetGenDialog(doc.ModelUnitSystem.ToString(), bbox, saved);
             if (dlg.ShowDialog() != DialogResult.OK) return Result.Cancel;
+
+            try { if (plug != null) plug.Settings.SetString("LastInput", dlg.SavedState); }
+            catch (Exception) { /* 저장 실패는 무시 */ }
 
             // 3) 저장 경로(확장자 제외): 3dm과 같은 폴더
             string basePath;

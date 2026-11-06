@@ -57,7 +57,10 @@ namespace OffsetGenPlugin
         public string ShipName = "";
         public string ScaleText = "1:100";
 
-        public OffsetGenDialog(string modelUnitName)
+        public string SavedState = "";         // 다음 실행에서 복원할 마지막 입력 (같은 선체일 때만 사용)
+        string hullSig = "";
+
+        public OffsetGenDialog(string modelUnitName, BoundingBox bbox, string savedState)
         {
             Text = "OffsetGen - 오프셋 테이블 / 선도 생성";
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -183,6 +186,8 @@ namespace OffsetGenPlugin
             AddLabel("척도", 212, 92, gbLn);
             txtScale = AddText("1:100", 248, 89, 70, gbLn);
 
+            ApplyInitial(bbox, savedState);
+
             // ===== 버튼 =====
             var ok = new Button { Text = "생성", Left = 230, Top = 476, Width = 90 };
             var cancel = new Button { Text = "취소", Left = 328, Top = 476, Width = 90, DialogResult = DialogResult.Cancel };
@@ -191,6 +196,51 @@ namespace OffsetGenPlugin
             Controls.Add(cancel);
             AcceptButton = ok;
             CancelButton = cancel;
+        }
+
+
+        // 선체 범위에서 기본값을 채우고, 같은 선체의 저장된 입력이 있으면 그것으로 덮어씀
+        void ApplyInitial(BoundingBox bb, string saved)
+        {
+            if (!bb.IsValid) return;
+            double halfBeam = Math.Max(Math.Abs(bb.Min.Y), Math.Abs(bb.Max.Y));
+            hullSig = KeyValueCodec.Signature(bb.Min.X, bb.Max.X, bb.Min.Z, bb.Max.Z, halfBeam);
+
+            var d = AutoDefaults.Compute(bb.Min.X, bb.Max.X, bb.Min.Z, bb.Max.Z, halfBeam);
+            txtAp.Text = d.Ap; txtFp.Text = d.Fp; txtStaSpacing.Text = d.Spacing;
+            txtStaStartNo.Text = d.StartNo; txtStaEndNo.Text = d.EndNo; txtStaCustom.Text = "";
+            txtWlStart.Text = d.WlStart; txtWlEnd.Text = d.WlEnd; txtWlStep.Text = d.WlStep; txtWlExtra.Text = "";
+            txtBtStart.Text = d.BtStart; txtBtEnd.Text = d.BtEnd; txtBtStep.Text = d.BtStep; txtBtExtra.Text = "";
+
+            var kv = KeyValueCodec.Parse(saved);
+            string sig;
+            if (!kv.TryGetValue("sig", out sig) || sig != hullSig) return;   // 다른 선체면 복원하지 않음
+            Restore(kv, "ap", txtAp); Restore(kv, "fp", txtFp); Restore(kv, "spacing", txtStaSpacing);
+            Restore(kv, "st0", txtStaStartNo); Restore(kv, "st1", txtStaEndNo); Restore(kv, "stx", txtStaCustom);
+            Restore(kv, "wl0", txtWlStart); Restore(kv, "wl1", txtWlEnd); Restore(kv, "wls", txtWlStep); Restore(kv, "wlx", txtWlExtra);
+            Restore(kv, "bt0", txtBtStart); Restore(kv, "bt1", txtBtEnd); Restore(kv, "bts", txtBtStep); Restore(kv, "btx", txtBtExtra);
+            string dec;
+            int dv;
+            if (kv.TryGetValue("dec", out dec) && int.TryParse(dec, out dv) && dv >= numDecimals.Minimum && dv <= numDecimals.Maximum)
+                numDecimals.Value = dv;
+        }
+
+        static void Restore(Dictionary<string, string> kv, string key, TextBox tb)
+        {
+            string v;
+            if (kv.TryGetValue(key, out v)) tb.Text = v;
+        }
+
+        string BuildSavedState()
+        {
+            var kv = new Dictionary<string, string>();
+            kv["sig"] = hullSig;
+            kv["ap"] = txtAp.Text; kv["fp"] = txtFp.Text; kv["spacing"] = txtStaSpacing.Text;
+            kv["st0"] = txtStaStartNo.Text; kv["st1"] = txtStaEndNo.Text; kv["stx"] = txtStaCustom.Text;
+            kv["wl0"] = txtWlStart.Text; kv["wl1"] = txtWlEnd.Text; kv["wls"] = txtWlStep.Text; kv["wlx"] = txtWlExtra.Text;
+            kv["bt0"] = txtBtStart.Text; kv["bt1"] = txtBtEnd.Text; kv["bts"] = txtBtStep.Text; kv["btx"] = txtBtExtra.Text;
+            kv["dec"] = ((int)numDecimals.Value).ToString(CultureInfo.InvariantCulture);
+            return KeyValueCodec.Serialize(kv);
         }
 
         static string N(double v)
@@ -320,6 +370,7 @@ namespace OffsetGenPlugin
             ShowWaterlineCurves = chkShowWl.Checked;
             ShowButtockCurves = chkShowBt.Checked;
             Decimals = (int)numDecimals.Value;
+            SavedState = BuildSavedState();
             DialogResult = DialogResult.OK;
             Close();
         }

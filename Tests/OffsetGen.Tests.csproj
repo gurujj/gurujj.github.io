@@ -33,6 +33,7 @@
   <ItemGroup>
     <Compile Include="CoreTests.cs" />
     <Compile Include="..\OffsetGen\Core\AdaptiveSampler.cs"><Link>Core\AdaptiveSampler.cs</Link></Compile>
+    <Compile Include="..\OffsetGen\Core\AutoDefaults.cs"><Link>Core\AutoDefaults.cs</Link></Compile>
     <Compile Include="..\OffsetGen\Core\CloudTracer.cs"><Link>Core\CloudTracer.cs</Link></Compile>
     <Compile Include="..\OffsetGen\Core\CsvWriter.cs"><Link>Core\CsvWriter.cs</Link></Compile>
     <Compile Include="..\OffsetGen\Core\DxfBuilder.cs"><Link>Core\DxfBuilder.cs</Link></Compile>
